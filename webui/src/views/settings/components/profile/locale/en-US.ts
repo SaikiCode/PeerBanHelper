@@ -7,6 +7,7 @@ export default {
   'page.settings.tab.profile.unit.bytes': 'bytes',
   'page.settings.tab.profile.form.banDuration': 'Use Global Ban Duration',
   'page.settings.tab.profile.form.ignoreAddress': 'Ignore Address',
+  'page.settings.tab.profile.form.ignoreAddress.action': 'Click to view',
   'page.settings.tab.profile.form.ignoreAddress.tooltip':
     'Bypass list, all peers comes from those IPs will bypass all checks',
   'page.settings.tab.profile.module.title': 'Module Config',
@@ -65,7 +66,7 @@ export default {
   'page.settings.tab.profile.module.progressCheatBlocker.excessive_threshold':
     'Excessive download threshold',
   'page.settings.tab.profile.module.progressCheatBlocker.excessive_threshold.tips':
-    'IsExcessive = uploaded > (torrent_size * excessive-threshold)',
+    'IsExcessive = uploaded > (torrent_size * excessive_threshold)',
   'page.settings.tab.profile.module.progressCheatBlocker.ipv4prefixlength': 'IPv4 prefix length',
   'page.settings.tab.profile.module.progressCheatBlocker.ipv6prefixlength': 'IPv6 prefix length',
   'page.settings.tab.profile.module.progressCheatBlocker.ipprefixLength.tips':
