@@ -127,7 +127,7 @@ public class TextManager implements Reloadable {
      * Loading Crowdin OTA module and i18n system
      */
     public void load() {
-        log.info("Loading up translations, this may need a while...");
+        log.info("Loading up translations, this may take a while...");
         //TODO: This will break the message processing system in-game until loading finished, need to fix it.
         this.reset();
         // first, we need load built-in fallback translation.
@@ -135,8 +135,6 @@ public class TextManager implements Reloadable {
         // second, load the bundled language files
         loadBundled().forEach(languageFilesManager::deploy);
         // then, load the translations from Crowdin
-        // and don't forget fix missing
-        languageFilesManager.fillMissing(loadBuiltInFallback());
         // finally, load override translations
         Collection<String> pending = getOverrideLocales(languageFilesManager.getDistributions().keySet());
         log.debug("Pending: {}", Arrays.toString(pending.toArray()));
@@ -172,6 +170,7 @@ public class TextManager implements Reloadable {
             pending.add("en_us");
             this.languageFilesManager.deploy("en_us", loadBuiltInFallback());
         }
+        this.languageFilesManager.fillMissing( loadBuiltInFallback());
         // Remember all available languages
         availableLanguages.addAll(pending);
 

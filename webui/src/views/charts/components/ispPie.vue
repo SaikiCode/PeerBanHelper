@@ -28,7 +28,7 @@
     <v-chart
       v-else
       class="chart"
-      :option="chartOption"
+      :option="usedOption"
       :loading="loading"
       autoresize
       :loading-options="loadingOptions"
@@ -130,11 +130,18 @@ const loadingOptions = computed(() => ({
   maskColor: darkStore.isDark ? 'rgba(0, 0, 0, 0.4)' : 'rgba(255, 255, 255, 0.4)'
 }))
 
+const usedOption = computed(() => chartOption.value)
+
 const chartOption = ref({
   tooltip: {
     trigger: 'item',
     appendToBody: true,
-    formatter: '<p style="word-wrap:break-all"><b>{b}</b></p>  {c} ({d}%)'
+    formatter: '<p style="word-wrap:break-all"><b>{b}</b></p>  {c} ({d}%)',
+    backgroundColor: darkStore.isDark ? '#333335' : '',
+    borderColor: darkStore.isDark ? '#333335' : '',
+    textStyle: {
+      color: darkStore.isDark ? 'rgba(255, 255, 255, 0.7)' : ''
+    }
   },
   legend: {
     orient: 'vertical',
@@ -172,11 +179,19 @@ const chartOption = ref({
 })
 
 watch(option, (v) => {
-  run(v.range[0], v.range[1], option.bannedOnly)
+  run(v.range[0], v.range[1], option.bannedOnly, props.downloader)
 })
+const props = defineProps<{
+  downloader?: string
+}>()
 
 const { loading, run, refresh } = useRequest(getGeoIPData, {
-  defaultParams: [dayjs().startOf('day').add(-7, 'day').toDate(), new Date(), option.bannedOnly],
+  defaultParams: [
+    dayjs().startOf('day').add(-7, 'day').toDate(),
+    new Date(),
+    option.bannedOnly,
+    props.downloader
+  ],
   onSuccess: (data) => {
     if (data.data) {
       const fieldData = data.data[option.field]

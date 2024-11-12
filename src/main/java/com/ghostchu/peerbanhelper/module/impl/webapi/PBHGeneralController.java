@@ -33,7 +33,10 @@ import oshi.SystemInfo;
 import oshi.hardware.HardwareAbstractionLayer;
 
 import javax.management.MBeanServer;
-import java.io.*;
+import java.io.File;
+import java.io.FileInputStream;
+import java.io.FileOutputStream;
+import java.io.IOException;
 import java.lang.management.ManagementFactory;
 import java.lang.management.MemoryUsage;
 import java.nio.file.Files;
@@ -76,7 +79,7 @@ public class PBHGeneralController extends AbstractFeatureModule {
         webContainer.javalin()
                 .get("/api/general/status", this::handleStatusGet, Role.USER_READ)
                 .get("/api/general/checkModuleAvailable", this::handleModuleAvailable, Role.USER_READ)
-                .post("/api/general/heapdump", this::handleHeapDump, Role.USER_WRITE)
+                .get("/api/general/heapdump", this::handleHeapDump, Role.USER_WRITE)
                 .post("/api/general/reload", this::handleReloading, Role.USER_WRITE)
                 .get("/api/general/{configName}", this::handleConfigGet, Role.USER_WRITE)
                 .put("/api/general/{configName}", this::handleConfigPut, Role.USER_WRITE);

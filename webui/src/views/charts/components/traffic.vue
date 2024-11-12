@@ -65,10 +65,10 @@
     <v-chart
       v-else
       class="chart"
-      :option="chartOptions"
+      :option="usedOption"
       :loading="loading"
       :loading-options="loadingOptions"
-      theme="ovilia-green"
+      :theme="darkStore.isDark ? 'dark' : 'ovilia-green'"
       autoresize
       :init-options="{ renderer: 'svg' }"
     />
@@ -111,12 +111,18 @@ const loadingOptions = computed(() => ({
 const { t, d } = useI18n()
 
 const err = ref<Error>()
+const usedOption = computed(() => chartOptions.value)
 
 const chartOptions = ref({
   tooltip: {
     trigger: 'axis',
     axisPointer: {
       type: 'shadow'
+    },
+    backgroundColor: darkStore.isDark ? '#333335' : '',
+    borderColor: darkStore.isDark ? '#333335' : '',
+    textStyle: {
+      color: darkStore.isDark ? 'rgba(255, 255, 255, 0.7)' : ''
     },
     formatter: function (value: CallbackDataParams[]) {
       return (
@@ -130,6 +136,7 @@ const chartOptions = ref({
       )
     }
   },
+  backgroundColor: darkStore.isDark ? 'rgba(0, 0, 0, 0.0)' : undefined,
   legend: {
     data: [t('page.charts.traffic.options.download'), t('page.charts.traffic.options.upload')]
   },
@@ -139,6 +146,9 @@ const chartOptions = ref({
     max: 'dataMax',
     min: 'dataMin',
     minInterval: 3600 * 24 * 1000
+  },
+  grid: {
+    left: '15%'
   },
   yAxis: {
     type: 'value',
@@ -169,11 +179,14 @@ const chartOptions = ref({
 })
 
 watch(option, (v) => {
-  run(v.range[0], v.range[1])
+  run(v.range[0], v.range[1], props.downloader)
 })
+const props = defineProps<{
+  downloader?: string
+}>()
 
 const { loading, run, refresh, data } = useRequest(getTraffic, {
-  defaultParams: [dayjs().startOf('day').add(-7, 'day').toDate(), new Date()],
+  defaultParams: [dayjs().startOf('day').add(-7, 'day').toDate(), new Date(), props.downloader],
   onSuccess: (data) => {
     if (data.data) {
       chartOptions.value.series[0].data = data.data.map((v) => [

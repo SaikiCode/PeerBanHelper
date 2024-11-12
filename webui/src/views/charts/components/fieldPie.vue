@@ -23,7 +23,7 @@
     <v-chart
       v-else
       class="chart"
-      :option="chartOption"
+      :option="usedOption"
       :loading="loading"
       autoresize
       :loading-options="loadingOptions"
@@ -68,16 +68,16 @@
   </a-card>
 </template>
 <script lang="ts" setup>
-import { use } from 'echarts/core'
-import { PieChart } from 'echarts/charts'
-import { TooltipComponent, LegendComponent } from 'echarts/components'
-import { SVGRenderer } from 'echarts/renderers'
-import { ref, reactive, watch, computed } from 'vue'
 import { getAnalysisDataByField } from '@/service/charts'
-import { useRequest } from 'vue-request'
-import VChart from 'vue-echarts'
 import { useDarkStore } from '@/stores/dark'
+import { PieChart } from 'echarts/charts'
+import { LegendComponent, TooltipComponent } from 'echarts/components'
+import { use } from 'echarts/core'
+import { SVGRenderer } from 'echarts/renderers'
+import { computed, reactive, ref, watch } from 'vue'
+import VChart from 'vue-echarts'
 import { useI18n } from 'vue-i18n'
+import { useRequest } from 'vue-request'
 
 const { t } = useI18n()
 
@@ -97,11 +97,18 @@ const loadingOptions = computed(() => ({
 }))
 const err = ref<Error>()
 
+const usedOption = computed(() => chartOption.value)
+
 const chartOption = ref({
   tooltip: {
     trigger: 'item',
     appendToBody: true,
-    formatter: '<p style="word-wrap:break-all"><b>{b}</b></p>  {c} ({d}%)'
+    formatter: '<p style="word-wrap:break-all"><b>{b}</b></p>  {c} ({d}%)',
+    backgroundColor: darkStore.isDark ? '#333335' : '',
+    borderColor: darkStore.isDark ? '#333335' : '',
+    textStyle: {
+      color: darkStore.isDark ? 'rgba(255, 255, 255, 0.7)' : ''
+    }
   },
   legend: {
     orient: 'vertical',
@@ -139,11 +146,15 @@ const chartOption = ref({
 })
 
 watch(option, (v) => {
-  run(v.field, v.enableThreshold)
+  run(v.field, v.enableThreshold, props.downloader)
 })
 
+const props = defineProps<{
+  downloader?: string
+}>()
+
 const { loading, run, refresh } = useRequest(getAnalysisDataByField, {
-  defaultParams: ['peerId', true],
+  defaultParams: ['peerId', true, props.downloader],
   onSuccess: (data) => {
     if (data.data) {
       const nonEmptyData = data.data.map((it) => {

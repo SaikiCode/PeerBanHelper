@@ -69,7 +69,6 @@ public class BiglyBT extends AbstractDownloader {
                 .followRedirects(HttpClient.Redirect.ALWAYS)
                 .defaultHeader("Authorization", "Bearer " + config.getToken())
                 .defaultHeader("Content-Type", "application/json")
-                .defaultHeader("Accept-Encoding", "gzip,deflate")
                 .connectTimeout(Duration.of(10, ChronoUnit.SECONDS))
                 .headersTimeout(Duration.of(10, ChronoUnit.SECONDS))
                 .readTimeout(Duration.of(30, ChronoUnit.SECONDS))
@@ -165,7 +164,7 @@ public class BiglyBT extends AbstractDownloader {
         }
         List<DownloadRecord> torrentDetail = JsonUtil.getGson().fromJson(request.body(), new TypeToken<List<DownloadRecord>>() {
         }.getType());
-        List<Torrent> torrents = new ArrayList<>();
+        List<Torrent> torrents = new LinkedList<>();
         for (DownloadRecord detail : torrentDetail) {
             if (config.isIgnorePrivate() && detail.getTorrent().isPrivateTorrent()) {
                 continue;
@@ -216,7 +215,7 @@ public class BiglyBT extends AbstractDownloader {
             throw new IllegalStateException(tlUI(Lang.DOWNLOADER_BIGLYBT_FAILED_REQUEST_PEERS_LIST_IN_TORRENT, resp.statusCode(), resp.body()));
         }
         PeerManagerRecord peerManagerRecord = JsonUtil.getGson().fromJson(resp.body(), PeerManagerRecord.class);
-        List<Peer> peersList = new ArrayList<>();
+        List<Peer> peersList = new LinkedList<>();
         for (PeerRecord peer : peerManagerRecord.getPeers()) {
             var peerId = new String(ByteUtil.hexToByteArray(peer.getPeerId()), StandardCharsets.ISO_8859_1);
             if (peerId.length() > 8) {

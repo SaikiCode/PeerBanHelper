@@ -60,7 +60,6 @@ public abstract class AbstractQbittorrent extends AbstractDownloader {
         Methanol.Builder builder = Methanol
                 .newBuilder()
                 .version(HttpClient.Version.valueOf(config.getHttpVersion()))
-                .defaultHeader("Accept-Encoding", "gzip,deflate")
                 .followRedirects(HttpClient.Redirect.ALWAYS)
                 .connectTimeout(Duration.of(10, ChronoUnit.SECONDS))
                 .headersTimeout(Duration.of(10, ChronoUnit.SECONDS))
@@ -162,7 +161,7 @@ public abstract class AbstractQbittorrent extends AbstractDownloader {
             fillTorrentPrivateField(qbTorrent);
         }
         return qbTorrent.stream().map(t -> (Torrent) t)
-                .filter(t-> !config.isIgnorePrivate() || !t.isPrivate())
+                .filter(t -> !config.isIgnorePrivate() || !t.isPrivate())
                 .collect(Collectors.toList());
     }
 
@@ -244,10 +243,13 @@ public abstract class AbstractQbittorrent extends AbstractDownloader {
 
         JsonObject object = JsonParser.parseString(resp.body()).getAsJsonObject();
         JsonObject peers = object.getAsJsonObject("peers");
-        List<Peer> peersList = new ArrayList<>();
+        List<Peer> peersList = new LinkedList<>();
         for (String s : peers.keySet()) {
             JsonObject singlePeerObject = peers.getAsJsonObject(s);
             QBittorrentPeer qbPeer = JsonUtil.getGson().fromJson(singlePeerObject.toString(), QBittorrentPeer.class);
+            if ("HTTP".equalsIgnoreCase(qbPeer.getConnection()) || "HTTPS".equalsIgnoreCase(qbPeer.getConnection()) || "Web".equalsIgnoreCase(qbPeer.getConnection())) {
+                continue;
+            }
             if (qbPeer.getPeerAddress().getIp() == null || qbPeer.getPeerAddress().getIp().isBlank()) {
                 continue;
             }

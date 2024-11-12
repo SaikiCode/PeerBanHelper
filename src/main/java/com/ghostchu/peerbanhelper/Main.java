@@ -1,5 +1,6 @@
 package com.ghostchu.peerbanhelper;
 
+import ch.qos.logback.classic.Level;
 import ch.qos.logback.classic.LoggerContext;
 import ch.qos.logback.core.rolling.RollingFileAppender;
 import ch.qos.logback.core.rolling.SizeAndTimeBasedRollingPolicy;
@@ -22,6 +23,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.bspfsystems.yamlconfiguration.configuration.InvalidConfigurationException;
 import org.bspfsystems.yamlconfiguration.file.YamlConfiguration;
 import org.jetbrains.annotations.Nullable;
+import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.support.BeanDefinitionBuilder;
 import org.springframework.beans.factory.support.DefaultListableBeanFactory;
@@ -148,6 +150,16 @@ public class Main {
 
             appender.start(); // 启动 appender
         }
+
+        try {
+            var targetLevel = System.getProperty("pbh.log.level");
+            if (targetLevel != null) {
+                var rootLogger = LoggerFactory.getLogger(Logger.ROOT_LOGGER_NAME);
+                ch.qos.logback.classic.Logger logbackLogger = (ch.qos.logback.classic.Logger) rootLogger;
+                logbackLogger.setLevel(Level.toLevel(targetLevel));
+            }
+        } catch (Throwable ignored) {
+        }
     }
 
     public static ReloadResult reloadModule() {
@@ -210,8 +222,14 @@ public class Main {
         logsDirectory = new File(dataDirectory, "logs");
         configDirectory = new File(dataDirectory, "config");
         pluginDirectory = new File(dataDirectory, "plugins");
-        libraryDirectory = new File(dataDirectory, "libraries");
         debugDirectory = new File(dataDirectory, "debug");
+        if (System.getProperty("pbh.configdir") != null) {
+            configDirectory = new File(System.getProperty("pbh.configdir"));
+        }
+        if (System.getProperty("pbh.logsdir") != null) {
+            logsDirectory = new File(System.getProperty("pbh.logsdir"));
+        }
+        // other directories aren't allowed to change by user to keep necessary structure
     }
 
     private static YamlConfiguration loadConfiguration(File file) {

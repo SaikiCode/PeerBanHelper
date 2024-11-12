@@ -24,7 +24,7 @@
       ]"
     >
       <!-- 骨架屏 -->
-      <a-col v-if="!data || data?.length === 0 || loading" :xs="24" :sm="12" :md="8" :lg="6">
+      <a-col v-if="!data || data?.length === 0 || firstLoading" :xs="24" :sm="12" :md="8" :lg="6">
         <a-card hoverable :header-style="{ height: 'auto' }">
           <template #title>
             <a-skeleton :animation="true">
@@ -60,7 +60,7 @@
       <a-typography-title :heading="3"
         >{{ t('page.dashboard.torrentList.title') }}
       </a-typography-title>
-      <a-tabs size="large" animation lazy-load destroy-on-hide>
+      <a-tabs size="large" animation lazy-load destroy-on-hide type="rounded">
         <a-tab-pane v-for="downloader in data" :key="downloader.name" :title="downloader.name">
           <torrentList :downloader="downloader.name" />
         </a-tab-pane>
@@ -69,25 +69,27 @@
   </a-space>
 </template>
 <script setup lang="ts">
+import { type Downloader } from '@/api/model/downloader'
+import { getDownloaders } from '@/service/downloaders'
+import { useAutoUpdatePlugin } from '@/stores/autoUpdate'
 import { useEndpointStore } from '@/stores/endpoint'
 import { ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
+import { useRequest } from 'vue-request'
 import ClientStatusCard from './clientStatusCard.vue'
 import EditDownloaderModal from './editDownloaderModal.vue'
-import { useAutoUpdatePlugin } from '@/stores/autoUpdate'
-import { useRequest } from 'vue-request'
-import { getDownloaders } from '@/service/downloaders'
-import { type Downloader } from '@/api/model/downloader'
 import torrentList from './torrentList.vue'
 const { t } = useI18n()
 const endpointState = useEndpointStore()
 const data = ref<Downloader[]>()
-const { refresh, loading } = useRequest(
+const firstLoading = ref(true)
+const { refresh } = useRequest(
   getDownloaders,
   {
     cacheKey: () => `${endpointState.endpoint}-downloader`,
     onSuccess: (res) => {
       data.value = res.data
+      firstLoading.value = false
     }
   },
   [useAutoUpdatePlugin]
