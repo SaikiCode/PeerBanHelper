@@ -7,7 +7,7 @@ import lombok.Getter;
 
 @Data
 @AllArgsConstructor
-public class DownloaderLoginResult {
+public final class DownloaderLoginResult {
     @Getter
     private final Status status;
     private final TranslationComponent message;
@@ -19,10 +19,11 @@ public class DownloaderLoginResult {
 
     public enum Status {
         SUCCESS,
+        PAUSED,
         INCORRECT_CREDENTIAL,
         MISSING_COMPONENTS,
         NETWORK_ERROR,
         EXCEPTION,
-        REQUIRE_TAKE_ACTIONS
+        REQUIRE_TAKE_ACTIONS,
     }
 }

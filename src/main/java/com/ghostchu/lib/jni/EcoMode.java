@@ -6,12 +6,11 @@ import org.springframework.stereotype.Component;
 
 import java.io.File;
 import java.nio.file.Files;
-import java.nio.file.StandardCopyOption;
 import java.util.Locale;
 
 @Slf4j
 @Component
-public class EcoMode {
+public final class EcoMode {
 
     public boolean ecoMode(boolean enable) {
         String os = System.getProperty("os.name").toLowerCase(Locale.ROOT);
@@ -20,15 +19,15 @@ public class EcoMode {
         }
         String arch = System.getProperty("os.arch").toLowerCase(Locale.ROOT);
         try {
-            File tmpFile = Files.createTempFile("pbh-jni-lib", ".dll").toFile();
+            File tmpFile = new File(Main.getDataDirectory(), "pbh-jni-lib.dll");
             tmpFile.deleteOnExit();
             if (arch.contains("aarch64")) {
-                Files.copy(Main.class.getResourceAsStream("/native/windows/ghost-common-jni_vc2015_aarch64.dll"), tmpFile.toPath(), StandardCopyOption.REPLACE_EXISTING);
+                Files.write(tmpFile.toPath(), Main.class.getResourceAsStream("/native/windows/ghost-common-jni_vc2015_aarch64.dll").readAllBytes());
             } else {
-                Files.copy(Main.class.getResourceAsStream("/native/windows/ghost-common-jni_vc2015_amd64.dll"), tmpFile.toPath(), StandardCopyOption.REPLACE_EXISTING);
+                Files.write(tmpFile.toPath(), Main.class.getResourceAsStream("/native/windows/ghost-common-jni_vc2015_amd64.dll").readAllBytes());
             }
             System.load(tmpFile.getAbsolutePath());
-        } catch (Exception e) {
+        } catch (Throwable e) {
             log.error("Unable load JNI native libraries", e);
         }
         try {

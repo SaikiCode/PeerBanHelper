@@ -18,7 +18,7 @@ import java.util.UUID;
 import static com.ghostchu.peerbanhelper.text.TextManager.tlUI;
 
 @Slf4j
-public class IPFilterInvoker implements BanListInvoker {
+public final class IPFilterInvoker implements BanListInvoker {
     private final PeerBanHelperServer server;
     private File ipFilterDat;
     private boolean enabled = true;
@@ -26,7 +26,7 @@ public class IPFilterInvoker implements BanListInvoker {
     @SneakyThrows
     public IPFilterInvoker(PeerBanHelperServer server) {
         this.server = server;
-        if (!server.getMainConfig().getBoolean("banlist-invoker.ipfilter-dat.enabled", false)) {
+        if (!Main.getMainConfig().getBoolean("banlist-invoker.ipfilter-dat.enabled", false)) {
             this.enabled = false;
             return;
         }

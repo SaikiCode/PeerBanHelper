@@ -13,7 +13,7 @@
       <a-form-item field="config.type" :label="t('page.dashboard.editModal.label.type')" required>
         <a-select
           v-model="form.config.type"
-          style="width: 10em"
+          style="width: 11em"
           :trigger-props="{ autoFitPopupMinWidth: true }"
         >
           <a-option :value="ClientTypeEnum.qBittorrent">qBittorrent</a-option>
@@ -21,9 +21,9 @@
           <a-option :value="ClientTypeEnum.BiglyBT">BiglyBT</a-option>
           <a-option :value="ClientTypeEnum.Deluge">Deluge</a-option>
           <a-option :value="ClientTypeEnum.BitComet">BitComet</a-option>
-          <a-tooltip :content="t('page.dashboard.editModal.transmission.discourage')">
-            <a-option :value="ClientTypeEnum.Transmission" disabled>Transmission</a-option>
-          </a-tooltip>
+          <!--          <a-tooltip :content="t('page.dashboard.editModal.transmission.discourage')">-->
+          <a-option :value="ClientTypeEnum.Transmission">Transmission</a-option>
+          <!--          </a-tooltip>-->
         </a-select>
         <template v-if="form.config.type === ClientTypeEnum.BiglyBT" #extra>
           <i18n-t keypath="page.dashboard.editModal.biglybt">
@@ -43,7 +43,14 @@
       >
         <a-input v-model="form.name" allow-clear />
       </a-form-item>
-      <component :is="formMap[form.config.type] as any" v-model="form.config" />
+      <a-form-item
+        field="config.paused"
+        :label="t('page.dashboard.editModal.label.paused')"
+        required
+      >
+        <a-switch v-model="form.config.paused" checked-color="orange" />
+      </a-form-item>
+      <component :is="formMap[form.config.type]" v-model="form.config" />
     </a-form>
   </a-modal>
 </template>
@@ -51,7 +58,7 @@
 import { ClientTypeEnum, type downloaderConfig } from '@/api/model/downloader'
 import { CreateDownloader, TestDownloaderConfig, UpdateDownloader } from '@/service/downloaders'
 import { type Form, Message } from '@arco-design/web-vue'
-import { defineAsyncComponent, reactive, ref } from 'vue'
+import { type Component, defineAsyncComponent, reactive, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 
 const qbittorrentForm = defineAsyncComponent(() => import('@/components/forms/qbittorrent.vue'))
@@ -65,7 +72,7 @@ const { t } = useI18n()
 const showModal = ref(false)
 const newItem = ref(false)
 
-const formMap = {
+const formMap: Record<ClientTypeEnum, Component> = {
   [ClientTypeEnum.qBittorrent]: qbittorrentForm,
   [ClientTypeEnum.qBittorrentEE]: qbittorrentEEForm,
   [ClientTypeEnum.Transmission]: transmissionForm,
@@ -97,7 +104,8 @@ defineExpose({
         basicAuth: {},
         verifySsl: true,
         httpVersion: 'HTTP_1_1',
-        incrementBan: true
+        incrementBan: true,
+        paused: false
       } as downloaderConfig
     }
     showModal.value = true

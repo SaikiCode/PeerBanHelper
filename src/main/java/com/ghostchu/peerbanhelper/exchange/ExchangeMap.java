@@ -9,19 +9,23 @@ import java.util.Collections;
 import java.util.Set;
 import java.util.TreeSet;
 
-public class ExchangeMap {
-    public static final Set<DisplayFlag> GUI_DISPLAY_FLAGS = Collections.synchronizedSet(new TreeSet<>());
+public final class ExchangeMap {
+    public static volatile boolean PBH_PLUS_ACTIVATED = false;
+    public static volatile boolean UNSUPPORTED_PLATFORM = false;
+    public static volatile Set<DisplayFlag> GUI_DISPLAY_FLAGS = Collections.synchronizedSet(new TreeSet<>());
 
     @Data
     @AllArgsConstructor
     @NoArgsConstructor
     public static class DisplayFlag implements Comparable<DisplayFlag> {
+        private String id;
         private int priority;
         private String content;
 
         @Override
         public int compareTo(@NotNull ExchangeMap.DisplayFlag o) {
-            return Integer.compare(priority, o.priority);
+            int priorityCompare = Integer.compare(priority, o.priority);
+            return priorityCompare != 0 ? priorityCompare : id.compareTo(o.id);
         }
     }
 }

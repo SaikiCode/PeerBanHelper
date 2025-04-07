@@ -13,7 +13,7 @@ import raccoonfink.deluge.DelugeException;
 import java.util.List;
 
 @Getter
-public class PBHActiveTorrentsResponse extends DelugeResponse {
+public final class PBHActiveTorrentsResponse extends DelugeResponse {
     private List<ActiveTorrentsResponseDTO> activeTorrents;
 
     public PBHActiveTorrentsResponse(final Integer httpResponseCode, final JSONObject response) throws DelugeException {
@@ -41,6 +41,8 @@ public class PBHActiveTorrentsResponse extends DelugeResponse {
         private Double progress;
         @SerializedName("size")
         private Long size;
+        @SerializedName("completed_size")
+        private Long completedSize;
         @SerializedName("upload_payload_rate")
         private Long uploadPayloadRate;
         @SerializedName("download_payload_rate")

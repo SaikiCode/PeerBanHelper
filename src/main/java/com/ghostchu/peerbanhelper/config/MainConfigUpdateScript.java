@@ -6,10 +6,11 @@ import org.bspfsystems.yamlconfiguration.configuration.ConfigurationSection;
 import org.bspfsystems.yamlconfiguration.file.YamlConfiguration;
 
 import java.io.File;
+import java.util.List;
 import java.util.UUID;
 
 @Slf4j
-public class MainConfigUpdateScript {
+public final class MainConfigUpdateScript {
     private final YamlConfiguration conf;
 
     public MainConfigUpdateScript(YamlConfiguration conf) {
@@ -19,7 +20,7 @@ public class MainConfigUpdateScript {
 
     private void validate() {
         String installationId = conf.getString("installation-id");
-        if(installationId == null || installationId.isBlank()){
+        if (installationId == null || installationId.isBlank()) {
             conf.set("installation-id", UUID.randomUUID().toString());
         }
 //        String token = conf.getString("server.token");
@@ -27,6 +28,86 @@ public class MainConfigUpdateScript {
 //            conf.set("server.token", UUID.randomUUID().toString());
 //            log.info(tlUI(Lang.TOO_WEAK_TOKEN));
 //        }
+    }
+
+    @UpdateScript(version = 28)
+    public void updateBtnNetworkAddress() {
+        List<String> outdatedBtnAddress = List.of(
+                "https://btn-prod.ghostchu-services.top/ping/config",
+                "https://btn-dev.ghostchu-services.top/ping/config",
+                "https://btn-dev2.ghostchu-services.top/ping/config",
+                "https://sparkle.ghostchu-services.top/ping/config",
+                "http://btn-prod.ghostchu-services.top/ping/config",
+                "http://btn-dev.ghostchu-services.top/ping/config",
+                "http://btn-dev2.ghostchu-services.top/ping/config",
+                "http://sparkle.ghostchu-services.top/ping/config"
+        );
+        if (outdatedBtnAddress.contains(conf.getString("btn.config-url"))) {
+            conf.set("btn.config-url", "https://sparkle.pbh-btn.com/ping/config");
+        }
+    }
+
+    @UpdateScript(version = 27)
+    public void updateVacuum() {
+        conf.set("persist.vacuum-interval-days", 60);
+    }
+
+    @UpdateScript(version = 26)
+    public void pushProvidersSMTPStructUpgrade() {
+        var pushNotification = conf.getConfigurationSection("push-notification");
+        if (pushNotification == null) return;
+        for (String key : pushNotification.getKeys(false)) {
+            var single = pushNotification.getConfigurationSection(key);
+            if (single == null) continue;
+            if(single.getBoolean("enabled", false)){
+                pushNotification.set(key, null); // 删除未启用的推送渠道
+            }else {
+                var type = single.getString("type");
+                if ("smtp".equals(type)) {
+                    single.set("auth", true);
+                    if (single.getBoolean("ssl")) {
+                        single.set("encryption", "STARTTLS");
+                    } else {
+                        single.set("encryption", "NONE");
+                    }
+                    single.set("ssl", null);
+                    single.set("sendPartial", true);
+                }
+                pushNotification.set(key, single);
+            }
+
+            conf.set("push-notification", pushNotification);
+        }
+    }
+
+    @UpdateScript(version = 25)
+    public void pushProvidersCleanup() {
+        var pushNotification = conf.getConfigurationSection("push-notification");
+        if (pushNotification == null) return;
+        for (String key : pushNotification.getKeys(false)) {
+            var single = pushNotification.getConfigurationSection(key);
+            if (single == null) continue;
+            single.set("enabled", null);
+            var sendKey = single.get("send-key");
+            if (sendKey != null) {
+                single.set("sendkey", sendKey);
+                single.set("send-key", null);
+            }
+            var chatId = single.get("chat-id");
+            if (chatId != null) {
+                single.set("chatid", chatId);
+                single.set("chat-id", null);
+            }
+            pushNotification.set(key, single);
+        }
+        conf.set("push-notification", pushNotification);
+    }
+
+    @UpdateScript(version = 24)
+    public void decentralizedConfiguration() {
+        conf.set("decentralized.enabled", false);
+        conf.set("decentralized.kubo-rpc", "/ip4/127.0.0.1/tcp/5001");
+        conf.set("decentralized.features.publish-banlist", 3600000);
     }
 
     @UpdateScript(version = 23)

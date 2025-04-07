@@ -10,14 +10,12 @@ import com.j256.ormlite.table.TableUtils;
 import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.stereotype.Component;
 
 import java.sql.SQLException;
 
-@Component
 @Getter
 @Slf4j
-public class DatabaseHelper {
+public final class DatabaseHelper {
     private final Database database;
 
     public DatabaseHelper(@Autowired Database database) throws SQLException {
@@ -45,7 +43,7 @@ public class DatabaseHelper {
 
     private void performUpgrade() throws SQLException {
         Dao<MetadataEntity, String> metadata = DaoManager.createDao(getDataSource(), MetadataEntity.class);
-        MetadataEntity version = metadata.createIfNotExists(new MetadataEntity("version", "7"));
+        MetadataEntity version = metadata.createIfNotExists(new MetadataEntity("version", "9"));
         int v = Integer.parseInt(version.getValue());
         if (v < 3) {
             try {
@@ -76,6 +74,21 @@ public class DatabaseHelper {
             TableUtils.dropTable(getDataSource(), AlertEntity.class, true);
             TableUtils.createTableIfNotExists(database.getDataSource(), AlertEntity.class);
             v = 7;
+        }
+        if (v == 7) {
+            TableUtils.dropTable(getDataSource(), AlertEntity.class, true);
+            TableUtils.createTableIfNotExists(database.getDataSource(), AlertEntity.class);
+            v = 8;
+        }
+        if (v == 8) {
+            try {
+                // add new column: privateTorrent, nullable
+                var torrentDao = DaoManager.createDao(getDataSource(), TorrentEntity.class);
+                torrentDao.executeRaw("ALTER TABLE " + torrentDao.getTableName() + " ADD COLUMN privateTorrent BOOLEAN NULL");
+            } catch (Exception err) {
+                log.error("Unable to upgrade database schema", err);
+            }
+            v = 9;
         }
         version.setValue(String.valueOf(v));
         metadata.update(version);

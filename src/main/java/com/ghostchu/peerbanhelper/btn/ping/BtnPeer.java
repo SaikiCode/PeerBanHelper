@@ -2,7 +2,7 @@ package com.ghostchu.peerbanhelper.btn.ping;
 
 import com.ghostchu.peerbanhelper.peer.Peer;
 import com.ghostchu.peerbanhelper.torrent.Torrent;
-import com.ghostchu.peerbanhelper.util.time.InfoHashUtil;
+import com.ghostchu.peerbanhelper.util.InfoHashUtil;
 import com.ghostchu.peerbanhelper.wrapper.PeerWrapper;
 import com.ghostchu.peerbanhelper.wrapper.TorrentWrapper;
 import com.google.gson.annotations.SerializedName;
@@ -13,7 +13,7 @@ import lombok.NoArgsConstructor;
 @Data
 @AllArgsConstructor
 @NoArgsConstructor
-public class BtnPeer {
+public final class BtnPeer {
     @SerializedName("ip_address")
     private String ipAddress;
     @SerializedName("peer_port")
@@ -24,6 +24,8 @@ public class BtnPeer {
     private String clientName;
     @SerializedName("torrent_identifier")
     private String torrentIdentifier;
+    @SerializedName("torrent_is_private")
+    private boolean torrentIsPrivate;
     @SerializedName("torrent_size")
     private long torrentSize;
     @SerializedName("downloaded")
@@ -53,6 +55,7 @@ public class BtnPeer {
         btnPeer.setClientName(peer.getClientName());
         String hashedId = InfoHashUtil.getHashedIdentifier(torrent.getHash());
         btnPeer.setTorrentIdentifier(hashedId);
+        btnPeer.setTorrentIsPrivate(torrent.isPrivateTorrent());
         btnPeer.setTorrentSize(torrent.getSize());
         btnPeer.setDownloaded(peer.getDownloaded());
         btnPeer.setRtDownloadSpeed(peer.getDownloadSpeed());

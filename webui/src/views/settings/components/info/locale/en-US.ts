@@ -10,6 +10,8 @@ export default {
   'page.settings.tab.info.version.plus': 'Plus Subscription',
   'page.settings.tab.info.version.plus.active': 'Active',
   'page.settings.tab.info.version.plus.inactive': 'Inactive',
+  'page.settings.tab.info.version.webui.versionNotMatch':
+    'WebUI Commit is different from the backend, this may be due to you using an external WebUI or browser cache, please hard refresh and try again.',
 
   'page.settings.tab.info.system': 'System Info',
   'page.settings.tab.info.system.os': 'OS',
@@ -46,6 +48,8 @@ export default {
   'page.settings.tab.info.btn.status': 'Status',
   'page.settings.tab.info.btn.status.success': 'Configuration file obtained successfully',
   'page.settings.tab.info.btn.status.fail': 'Failed to obtain configuration file',
+  'page.settings.tab.info.btn.status.fail.tips':
+    'Failed to obtain configuration, this may be a configuration problem, click to view the document',
   'page.settings.tab.info.btn.status.configUrl': 'Server Address',
   'page.settings.tab.info.btn.abilities': 'Ability List',
   'page.settings.tab.info.btn.abilities.enable': '{number} abilities enabled',

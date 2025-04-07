@@ -19,7 +19,7 @@ import java.util.Deque;
 
 @Component
 @Slf4j
-public class PeerRecordDao extends AbstractPBHDao<PeerRecordEntity, Long> {
+public final class PeerRecordDao extends AbstractPBHDao<PeerRecordEntity, Long> {
     private final TorrentDao torrentDao;
 
     public PeerRecordDao(@Autowired Database database, TorrentDao torrentDao) throws SQLException {
@@ -47,7 +47,7 @@ public class PeerRecordDao extends AbstractPBHDao<PeerRecordEntity, Long> {
                 .or()
                 .isNull("lastTimeSeen")
                 .queryBuilder()
-                .orderBy("lastTimeSeen", false);
+                .orderBy("lastTimeSeen", true);
         return queryByPaging(queryBuilder, pageable);
     }
 
@@ -56,7 +56,8 @@ public class PeerRecordDao extends AbstractPBHDao<PeerRecordEntity, Long> {
                 null,
                 torrent.getHash(),
                 torrent.getName(),
-                torrent.getSize()
+                torrent.getSize(),
+                torrent.isPrivateTorrent()
         ));
         PeerRecordEntity currentSnapshot = new PeerRecordEntity(
                 null,

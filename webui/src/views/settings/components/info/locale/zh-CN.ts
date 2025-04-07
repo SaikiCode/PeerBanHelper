@@ -10,6 +10,8 @@ export default {
   'page.settings.tab.info.version.plus': 'Plus 订阅',
   'page.settings.tab.info.version.plus.active': '已激活',
   'page.settings.tab.info.version.plus.inactive': '未激活',
+  'page.settings.tab.info.version.webui.versionNotMatch':
+    'WebUI Commit 与后端不同，这可能是由于你在使用外部 WebUI 或者浏览器缓存，请硬刷新后再试试。',
 
   'page.settings.tab.info.system': '系统信息',
   'page.settings.tab.info.system.os': '操作系统',
@@ -46,6 +48,7 @@ export default {
   'page.settings.tab.info.btn.status': '状态',
   'page.settings.tab.info.btn.status.success': '配置文件获取成功',
   'page.settings.tab.info.btn.status.fail': '配置文件获取失败',
+  'page.settings.tab.info.btn.status.fail.tips': '获取配置失败，这可能是配置存在问题，点击查看文档',
   'page.settings.tab.info.btn.status.configUrl': '服务器地址',
   'page.settings.tab.info.btn.abilities': '能力列表',
   'page.settings.tab.info.btn.abilities.enable': '{number}个能力已启用',

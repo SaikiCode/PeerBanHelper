@@ -12,7 +12,7 @@ import java.util.Objects;
 import java.util.Optional;
 
 @Component
-public class TorrentDao extends AbstractPBHDao<TorrentEntity, Long> {
+public final class TorrentDao extends AbstractPBHDao<TorrentEntity, Long> {
     public TorrentDao(@Autowired Database database) throws SQLException {
         super(database.getDataSource(), TorrentEntity.class);
         setObjectCache(true);
@@ -41,6 +41,10 @@ public class TorrentDao extends AbstractPBHDao<TorrentEntity, Long> {
         }
         if (!(Objects.equals(entity.getSize(), data.getSize()))) {
             entity.setSize(data.getSize());
+            anyUpdated = true;
+        }
+        if (entity.getPrivateTorrent() == null && data.getPrivateTorrent() != null) {
+            entity.setPrivateTorrent(data.getPrivateTorrent());
             anyUpdated = true;
         }
         if (anyUpdated) {

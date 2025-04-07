@@ -18,7 +18,7 @@ CHECK_COMPLETED: "[Completed] Checked {} downloaders with {} active torrents and
 ERR_INVALID_RULE_SYNTAX: "The expression of rule {} is invalid, please check for spelling errors"
 MODULE_CNB_MATCH_CLIENT_NAME: "Match ClientName (UserAgent): {}"
 MODULE_IBL_MATCH_IP: "Match IP rule: {}"
-MODULE_IBL_MATCH_IP_RULE: "Match IP blacklist subscription rule: {}, IP address: {}"
+MODULE_IBL_MATCH_IP_RULE: "Match IP blacklist subscription rule: {}, IP address: {}, Comment: {}"
 MODULE_IBL_MATCH_ASN: "Match ASN rule: {}"
 MODULE_IBL_MATCH_REGION: "Match country or city ISO code rule: {}"
 MODULE_IBL_MATCH_CITY: "Match city rule: {}"
@@ -26,6 +26,7 @@ MODULE_IBL_EXCEPTION_GEOIP: "An exception occurred while matching GeoIP informat
 MODULE_IBL_MATCH_PORT: "Match Port rule: {}"
 MODULE_PID_MATCH_PEER_ID: "Match PeerId rule: {}"
 MODULE_PCB_EXCESSIVE_DOWNLOAD: "Client excessive download: Torrent size: {}, total uploaded to this peer: {}, maximum allowed excessive download total: {}"
+MODULE_PCB_EXCESSIVE_DOWNLOAD_INCOMPLETE: "Client excessive download: Torrent size: {} ({} downloaded), total uploaded to this peer: {}, maximum allowed excessive download total: {}"
 MODULE_PCB_PEER_MORE_THAN_LOCAL_SKIP: "Client progress: {}, calculated minimal progress: {}, client progress more than local progress, skipping detection"
 MODULE_PCB_PEER_BAN_INCORRECT_PROGRESS: "Client progress: {}, calculated minimal: {}, difference: {}"
 MODULE_PCB_PEER_BAN_REWIND: "Client progress: {}, calculated minimal progress: {}; last time recorded progress: {}, rewind progress: {}, max allowed rewind threshold: {}"
@@ -190,14 +191,15 @@ WEBAPI_INTERNAL_ERROR: "An internal server error occurred while processing the W
 GITHUB_PAGE: "https://github.com/PBH-BTN/PeerBanHelper"
 GUI_COPY_TO_CLIPBOARD_TITLE: "Copy to clipboard"
 GUI_COPY_TO_CLIPBOARD_DESCRIPTION: "Successfully copied to system clipboard: \n{}"
-GUI_TITLE_LOADING: "PeerBanHelper ({}) - Loading, please wait..."
-GUI_TITLE_LOADED: "PeerBanHelper ({}) - {} ({})"
+GUI_TITLE_LOADING: "PeerBanHelper - Loading, please wait..."
+GUI_TITLE_LOADED: "PeerBanHelper - {} ({})"
 WEBVIEW_DISABLED_WEBKIT_NOT_INCLUDED: "JavaFx Web module not found, you are using a lightweight build, WebUI tab not enabled"
 WEBVIEW_ENABLED: "JavaFx Web found, WebUI tab enabled"
 STATUS_TEXT_OK: "Currently working normally"
 STATUS_TEXT_LOGIN_FAILED: "Attempt to log in to downloader failed"
 STATUS_TEXT_EXCEPTION: "An exception occurred, please check PeerBanHelper console: {}"
 STATUS_TEXT_NEED_PRIVILEGE: "Insufficient privileges, request privilege escalation (run as administrator/root)"
+STATUS_TEXT_PAUSED: "PeerBanHelper won't check paused downloader, please cancel the pausing"
 SUGGEST_FIREWALL_IPTABLES: "Native iptables are not recommended, may cause network performance degradation. Consider installing ipset instead of using iptables"
 SUGGEST_FIREWALL_FIREWALLD: "Native firewalld is not recommended, may cause network performance degradation. Consider installing ipset instead of using firewalld"
 SUGGEST_FIREWALL_WINDOWS_FIREWALL_DISABLED: "Windows Firewall is currently disabled, please enable Windows Firewall for 'Public Network' and 'Private Network' to ensure system firewall integration works"
@@ -331,7 +333,6 @@ WEBVIEW_DEFAULT_DISABLED: "WebUI is disabled by default, recommend to access Web
 
 PCB_SHUTTING_DOWN: "Please wait ProgressCheatBlocker flush its data to disk from memory……"
 
-PBHPLUS_LICENSE_FAILED: "PBH Plus check failure, please fill a valid key in `pbh-plus-key` configuration in config.yml"
 CHARTS_IPDB_NEED_INIT: "Please configure GeoIP database in config.yml"
 
 IP_BLACKLIST_PUT_IP_INVALID_IP: "Invalid IP address, please input a valid IPV4/IPV6 address or CIDR."
@@ -343,7 +344,6 @@ SCHEDULED_FULL_BANLIST_APPLY: "[Repair] PeerBanHelper scheduled full banlist re-
 CLEANED_BANLOGS: "[Cleanup] Cleaned {} history records"
 
 OPERATION_EXECUTE_SUCCESSFULLY: "Operation execute successfully"
-PBH_PLUS_LICENSE_UPDATED: "License saved"
 PBH_PLUS_LICENSE_EXPIRED: "License expired"
 PBH_PLUS_LICENSE_INVALID: "License invalid"
 
@@ -488,7 +488,7 @@ PUSH_PROVIDER_TEST_SUCCESS: "{} ({}) Test message sent successfully, please chec
 PUSH_PROVIDER_TEST_FAILED: "Test push service {} ({}) failed"
 PUSH_PROVIDER_TEST_ERROR: "Test push service {} ({}) failed: {}"
 BAN_PEER_EXCEPTION: "An exception occurred while ban Peer, specific Peer unable to ban, Please report these information to PeerBanHelper developer"
-EXPRESS_RULE_ENGINE_DISALLOW_UNSAFE_SOURCE_ACCESS: "For security reason, create AviatorScript via Internet or Reserve Proxy is disallowed."
+EXPRESS_RULE_ENGINE_DISALLOW_UNSAFE_SOURCE_ACCESS: "For security reason, create AviatorScript via Internet or Reserve Proxy is disallowed. Please read: https://docs.pbh-btn.com/en/docs/faq/#why-cant-i-edit-custom-scripts-what-is-read-only-mode"
 EXPRESS_RULE_ENGINE_SAVED: "Script saved"
 BTN_RULES_SCRIPT_COMPILING: "Compiling the scripts from BTN server, this may take a while..."
 BTN_RULES_SCRIPT_COMPILED: "Compiled {} scripts, took {}ms"
@@ -498,3 +498,103 @@ GUI_MENU_SHOW_WINDOW: "Open Window"
 GUI_MENU_STATS: "Statistics"
 GUI_MENU_STATS_BANNED: "Banned {} peers ({} IP addresses)"
 GUI_MENU_STATS_DOWNLOADER: "Connected {}/{} downloader"
+
+PUSH_PROVIDER_API_ADD_FAILURE: "Failed to create push provider. Is the provided push type unsupported?"
+PUSH_PROVIDER_API_CREATED: "Push provider created successfully"
+PUSH_PROVIDER_API_UPDATED: "Push provider updated successfully"
+PUSH_PROVIDER_API_CREATION_FAILED_ALREADY_EXISTS: "Failed to create push provider. A push provider with the same configuration already exists"
+PUSH_PROVIDER_API_CREATION_FAILED_IO_EXCEPTION: "Failed to create push provider due to an I/O error. Please check the console logs"
+PUSH_PROVIDER_API_UPDATE_FAILURE: "Failed to update push provider. Is the provided push type unsupported?"
+PUSH_PROVIDER_API_UPDATE_FAILURE_ALREADY_EXISTS: "Failed to update push provider. A push provider with the same configuration already exists and removal failed"
+PUSH_PROVIDER_API_TEST_NAME_EXISTS: "The name used by the push provider conflicts with an existing push provider"
+PUSH_PROVIDER_API_TEST_OK: "Verification successful, configuration is valid"
+PUSH_PROVIDER_API_REMOVE_NOT_EXISTS: "Cannot remove the specified push provider. The push provider is not registered in PeerBanHelper"
+PUSH_PROVIDER_API_REMOVE_SAVED: "Removed successfully, configuration has been saved"
+PUSH_PROVIDER_API_PROVIDER_NOT_EXISTS: "The requested push provider is not registered in PeerBanHelper"
+
+
+PORT_MAPPER_PORT_MAPPING: "[PortMapper] Try to create port forwarding for port {}/{} ..."
+PORT_MAPPER_PORT_MAPPED: "[PortMapper] Successfully create a port forwarding on interface {} 's gateway for {}/{}, External Port: {} (External IP: {})；TTL：{} seconds."
+PORT_MAPPER_PORT_MAPPED_BUT_INTERNAL_ADDRESS: "[PortMapper] Need Attention! Although PortMapper successfully created one or more port forwarding, However, their external addresses appear to be dedicated IP addresses, which usually means that you are behind a two-tier NAT (e.g., your device is connected to a router that is under an optical cat that is also in routing mode), and port mapping may not work."
+PORT_MAPPER_PORT_MAPPING_FAILED: "[PortMapper] Failed to create/update port forwarding on interface {} for port {}/{}, re-trying; If this prompt appears frequently, check if the device is connected to multiple networks (e.g. Tailscale)"
+
+FREE_LICENSE_RENEW_SUCCESS: "A new license has been generated and activated."
+FREE_LICENSE_RENEW_STILL_ACTIVE: "The current license is still active and does not need to be regenerated."
+FREE_LICENSE_SOURCE: "Locally generated free license."
+FREE_LICENSE_DESCRIPTION: "Local generated renewable free license, for personal use only."
+DOWNLOADER_PAUSED: Downloader paused
+LAB_EXPERIMENT_DNSJAVA_TITLE: "DNSJava DNS"
+LAB_EXPERIMENT_DNSJAVA_DESCRIPTION: "Use [dnsjava/dnsjava](https://github.com/dnsjava/dnsjava) to replace the default JDK DNS resolver in some modules, providing more reliable hostname and reverse DNS lookup capabilities, and supporting custom DNS servers and load balancing. DNSJava only works for certain functions (such as reverse DNS lookup), while other functions will continue to use JDK DNS.  \nAfter enabling this experiment, you can configure the DNS server addresses for DNSJava in the configuration file."
+LAB_EXPERIMENT_SQLITE_VACUUM_TITLE: "SQLite VACUUM Optimization"
+LAB_EXPERIMENT_SQLITE_VACUUM_DESCRIPTION: "PeerBanHelper will check the SQLite data file for vacuuming (VACUUM) when starting up, and will perform a vacuum operation every 60 days by default (you can modify `persist.vacuum-interval-days` to change the vacuum interval). The vacuum operation will optimize the database file, reduce the file size, and improve query performance at the same time."
+SQLITE_VACUUM_BACKUP: "Backing up SQLite database file for vacuum operation..."
+SQLITE_VACUUM_BACKUP_COMPLETED: "SQLite database file backup completed, preparing for vacuum..."
+SQLITE_VACUUM_BACKUP_FAILED: "SQLite database file backup failed, unable to perform vacuum operation. This may be due to insufficient disk space, IO errors, or insufficient permissions. Please check the error message."
+SQLITE_VACUUM_IN_PROGRESS: "Vacuuming SQLite database in progress, do not close PeerBanHelper as it may cause database corruption! [In Progress]...."
+SQLITE_VACUUM_SUCCESS: "SQLite database vacuumed successfully, original file size: {} vacuumed file size: {}"
+MODULE_PTR_MATCH_PTR_RULE: "Match PTR rule: {}"
+
+MATCH_CONDITION_PORT_MATCH: "Port Match"
+MATCH_CONDITION_BOOLEAN: "Boolean"
+MATCH_CONDITION_BOOLEAN_BY_INTEGER: "Boolean (by Integer)"
+MATCH_CONDITION_BOOLEAN_BY_STRING: "Boolean (by String)"
+MATCH_STRING_CONTAINS: "String Contains: {}"
+MATCH_STRING_STARTS_WITH: "String StartsWith: {}"
+MATCH_STRING_ENDS_WITH: "String EndsWith: {}"
+MATCH_STRING_EQUALS: "String Equals: {}"
+MATCH_STRING_LENGTH: "String Length: {}"
+MATCH_STRING_REGEX: "String Regex: {}"
+MODULE_IBL_COMMENT_UNKNOWN: "Not Provided"
+JSON_MATCHER_NOT_MET: "Condition not meet: {} on {}"
+DOWNLOADER_API_TEST_BYPASS_PAUSED: "Download configuration drafted, please enable later"
+STATUS_BAR_GLOBAL_PAUSED: "⏸Global Paused"
+BTN_CONFIG_STATUS_UNSUCCESSFUL_HTTP_REQUEST: "Failed to send HTTP request to URL {}, HTTP status code: {}, remote response: {}"
+BTN_CONFIG_STATUS_UNSUCCESSFUL_INCOMPATIBLE_BTN_PROTOCOL_VERSION_CLIENT: "The current client BTN protocol implementation version is too old, local implementation version: {}, server requires at least: {}"
+BTN_CONFIG_STATUS_UNSUCCESSFUL_INCOMPATIBLE_BTN_PROTOCOL_VERSION_SERVER: "The current server BTN protocol implementation version is too old, server implementation version: {}, local requires at least: {}"
+BTN_CONFIG_STATUS_SUCCESSFUL: "Successfully connected to the BTN server"
+BTN_CONFIG_STATUS_EXCEPTION: "An unexpected error occurred while connecting to the BTN server: {}"
+DOWNLOADER_QB_FAILED_REQUEST_TRACKER_LIST_ON_TORRENT: "Request tracker list on torrent {} failed：{} - {}"
+TRACKER_FAILED_TO_UPDATE_TRACKER: "Failed to update tracker list on torrent {}：{} - {}"
+UTILITIES_TRACKER_REPLACED: "Successfully replaced {} torrent's tracker"
+DOWNLOADER_BIGLYBT_INCORRECT_ADAPTER_VERSION: "Currently installed BiglyBT adapter version is NOT supported, please upgrade to  {} or higher."
+LAB_EXPERIMENT_FILL_MISSING_DATA_IN_TRAFFIC_SUMMARY_TITLE: "Use known data to fill in missing data in traffic summary"
+LAB_EXPERIMENT_FILL_MISSING_DATA_IN_TRAFFIC_SUMMARY_DESCRIPTION: "Use known data to fill in missing data in traffic summary to try to correct incorrect traffic statistics data (only effective when records are missing in the non-starting area). This is an experimental algorithm, and the provided data may still be inaccurate."
+GUI_TABBED_WEBUI: "WebUI Console"
+JCEF_BROWSER_UNSUPPORTED_PLATFORM: "JCEF initialize failed: unsupported platform"
+JCEF_BROWSER_UNSUPPORTED_EXCEPTION: "JCEF initialize failed: CEF initialize exception"
+JCEF_DOWNLOAD_TITLE: "Download JCEF data pack"
+JCEF_DOWNLOAD_DESCRIPTION: |
+  PeerBanHelper is downloading the JCEF data pack to enable the WebUI console tab in the GUI window, this may take a while...<br/>
+  If you do not want to enable the JCEF feature, please add the startup additional parameter "nojcef".
+IPDB_DOWNLOAD_TITLE: "Download GeoIP DB: {}"
+IPDB_DOWNLOAD_DESCRIPTION: "PeerBanHelper downloading GeoIP database for providing IP geolocation information, this may take a while..."
+JCEF_DOWNLOAD_UNZIP_DESCRIPTION: "Unzipping the JCEF data pack, this may take a while..."
+GUI_COMMON_CANCEL: "Cancel"
+PBH_PLUS_THANKS_FOR_DONATION_GUI_TITLE: "❤ThankYou"
+GUI_TITLE_DEBUG: "🔧Debugging"
+DOWNLOADER_DOCKER_INCORRECT_NETWORK_DETECTED_TITLE: "Critical Error: Downloader in Incorrect Network Mode, PeerBanHelper May Not Work"
+DOWNLOADER_DOCKER_INCORRECT_NETWORK_DETECTED_DESCRIPTION: |
+  Critical error detected: The Peer inbound connection IP address configuration of the downloader {} is incorrect ({}).  
+  PeerBanHelper requires the real IP address of the Peer to function correctly, otherwise, it will incorrectly ban all inbound connections. Therefore, PeerBanHelper is ignoring these abnormal addresses. Bans will not take effect.  
+  This is usually caused by the downloader running in a Docker environment and using the `bridge` network mode. You must switch to the `host` network mode to avoid user-space forwarding rewriting the IP address information.  
+  
+  Note: You should correctly fix the IP issue. Simply removing internal network IP addresses from the ignore list will cause PeerBanHelper to incorrectly ban all inbound connections.  
+  For assistance, please join the PeerBanHelper community. **This prompt will only appear once per downloader.**
+LAB_EXPERIMENT_TRANSACTION_BATCH_BAN_HISTORY_WRITE_TITLE: "Enable transaction batch write ban history"
+LAB_EXPERIMENT_TRANSACTION_BATCH_BAN_HISTORY_WRITE_DESCRIPTION: "Use transactions to batch write to the database when recording ban history to improve performance and reduce random disk I/O operations."
+ABOUT_VIEW_CREDIT: "Developers and community contributors..."
+TITLE_APP_V_CONTAINER: "📦App-V"
+
+ALERT_DOWNLOADER_TRANSMISSION_BLOCKLIST_UPDATE_FAILED_TITLE: "Failed to update IP blocklist for {}"
+ALERT_DOWNLOADER_TRANSMISSION_BLOCKLIST_UPDATE_FAILED_DESCRIPTION: |
+  PeerBanHelper was unable to update the IP blocklist for {} because Transmission notified us that the blocklist update failed.
+  Please check and ensure that the "Settings -> Basic Settings -> WebUI -> Prefix" configuration item is correctly set to point to the PeerBanHelper WebUI address and that it is accessible and reachable by Transmission (merely confirming access via a browser is insufficient).
+  If this configuration is incorrect, Transmission will not be able to properly block or unblock any IP addresses.
+  
+  If you need any assistance with the configuration, please refer to the support documentation or request help in the community.
+DOWNLOADER_TRANSMISSION_BLOCKLIST_UPDATE_FAILED: |
+  PeerBanHelper was unable to update the IP blocklist for {} because Transmission notified us that the blocklist update failed.
+  Please check and ensure that the "Settings -> Basic Settings -> WebUI -> Prefix" configuration item is correctly set to point to the PeerBanHelper WebUI address and that it is accessible and reachable by Transmission (merely confirming access via a browser is insufficient).
+  If this configuration is incorrect, Transmission will not be able to properly block or unblock any IP addresses.
+  
+  If you need any assistance with the configuration, please refer to the support documentation or request help in the community.

@@ -5,6 +5,7 @@ import com.google.common.cache.CacheBuilder;
 import inet.ipaddr.IPAddress;
 import inet.ipaddr.IPAddressString;
 import lombok.extern.slf4j.Slf4j;
+import org.jetbrains.annotations.Contract;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
@@ -15,7 +16,7 @@ import java.util.concurrent.TimeUnit;
 /**
  * IP 地址工具类
  */
-public class IPAddressUtil {
+public final class IPAddressUtil {
     private static final IPAddress INVALID_ADDRESS_MISSINGNO = new IPAddressString("127.123.123.123").getAddress();
     private static final Cache<String, IPAddress> IP_ADDRESS_CACHE = CacheBuilder.newBuilder()
             .expireAfterAccess(15, TimeUnit.MINUTES)
@@ -34,7 +35,7 @@ public class IPAddressUtil {
      * @param ip
      * @return
      */
-    @Nullable
+    @Contract(value = "null -> null", pure = true)
     public static IPAddress getIPAddress(String ip) {
         if (ip == null) return null;
         if (ip.startsWith("[") && ip.endsWith("]")) {
@@ -65,9 +66,7 @@ public class IPAddressUtil {
     @Nullable
     public static IPAddress getIPAddressNoAutoConversation(String ip) {
         try {
-            return IP_ADDRESS_CACHE.get(ip, () -> {
-                return new IPAddressString(ip).toAddress();
-            });
+            return IP_ADDRESS_CACHE.get(ip, () -> new IPAddressString(ip).toAddress());
         } catch (ExecutionException e) {
             log.error("Unable to get ipaddress from ip {}", ip, e);
             return null;

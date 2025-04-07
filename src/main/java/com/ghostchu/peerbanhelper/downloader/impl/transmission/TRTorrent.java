@@ -2,6 +2,8 @@ package com.ghostchu.peerbanhelper.downloader.impl.transmission;
 
 import com.ghostchu.peerbanhelper.peer.Peer;
 import com.ghostchu.peerbanhelper.torrent.Torrent;
+import com.ghostchu.peerbanhelper.torrent.Tracker;
+import com.ghostchu.peerbanhelper.torrent.TrackerImpl;
 import cordelia.rpc.types.Torrents;
 import org.jetbrains.annotations.NotNull;
 
@@ -41,6 +43,11 @@ public final class TRTorrent implements Torrent {
     }
 
     @Override
+    public long getCompletedSize() {
+        return (long) (backend.getSizeWhenDone() * backend.getPercentDone());
+    }
+
+    @Override
     public long getRtUploadSpeed() {
         return backend.getRateUpload();
     }
@@ -62,5 +69,9 @@ public final class TRTorrent implements Torrent {
 
     public Integer getPeerLimit() {
         return backend.getPeerLimit();
+    }
+
+    public List<Tracker> getTrackers() {
+        return TrackerImpl.parseFromTrackerList(backend.getTrackerList());
     }
 }

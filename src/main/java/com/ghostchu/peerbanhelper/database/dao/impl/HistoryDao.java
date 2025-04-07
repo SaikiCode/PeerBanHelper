@@ -22,7 +22,7 @@ import java.util.function.Function;
 import java.util.regex.Pattern;
 
 @Component
-public class HistoryDao extends AbstractPBHDao<HistoryEntity, Long> {
+public final class HistoryDao extends AbstractPBHDao<HistoryEntity, Long> {
     private final Pattern sqlSafePattern;
 
     public HistoryDao(@Autowired Database database) throws SQLException {
@@ -44,15 +44,16 @@ public class HistoryDao extends AbstractPBHDao<HistoryEntity, Long> {
                 .selectRaw("ip, COUNT(*) AS count")
                 .groupBy("ip")
                 .orderByRaw("count DESC");
+        String[] args = new String[0];
         if (filter != null) {
-            builder.setWhere(builder.where().like("ip", new SelectArg(filter + "%")));
+            builder.setWhere(builder.where().like("ip", new SelectArg()));
+            args = new String[]{filter + "%"};
         }
-        List<PeerBanCount> mapped;
-        try (GenericRawResults<String[]> banLogs = builder
+        var queryBuilder = builder
                 .limit(pageable.getSize())
-                .offset(pageable.getZeroBasedPage() * pageable.getSize())
-                // .where().ge("banAt", twoWeeksAgo)
-                .queryRaw()) {
+                .offset(pageable.getZeroBasedPage() * pageable.getSize());
+        List<PeerBanCount> mapped;
+        try (GenericRawResults<String[]> banLogs = queryRaw(queryBuilder.prepareStatementString(), args)) {
             var results = banLogs.getResults();
             mapped = results.stream().map(arr -> new PeerBanCount(arr[0], Long.parseLong(arr[1]))).toList();
         }

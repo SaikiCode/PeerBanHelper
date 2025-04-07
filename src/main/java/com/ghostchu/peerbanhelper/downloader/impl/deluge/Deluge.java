@@ -9,6 +9,7 @@ import com.ghostchu.peerbanhelper.peer.PeerFlag;
 import com.ghostchu.peerbanhelper.text.Lang;
 import com.ghostchu.peerbanhelper.text.TranslationComponent;
 import com.ghostchu.peerbanhelper.torrent.Torrent;
+import com.ghostchu.peerbanhelper.torrent.Tracker;
 import com.ghostchu.peerbanhelper.util.StrUtil;
 import com.ghostchu.peerbanhelper.util.json.JsonUtil;
 import com.ghostchu.peerbanhelper.wrapper.BanMetadata;
@@ -36,7 +37,7 @@ import java.util.List;
 
 import static com.ghostchu.peerbanhelper.text.TextManager.tlUI;
 
-public class Deluge extends AbstractDownloader {
+public final class Deluge extends AbstractDownloader {
     private static final Logger log = org.slf4j.LoggerFactory.getLogger(Deluge.class);
     private static final List<String> MUST_HAVE_METHODS = ImmutableList.of(
             "peerbanhelperadapter.replace_blocklist",
@@ -82,6 +83,17 @@ public class Deluge extends AbstractDownloader {
     @Override
     public String getType() {
         return "Deluge";
+    }
+
+    @Override
+    public boolean isPaused() {
+        return config.isPaused();
+    }
+
+    @Override
+    public void setPaused(boolean paused) {
+        super.setPaused(paused);
+        config.setPaused(paused);
     }
 
     @Override
@@ -132,6 +144,7 @@ public class Deluge extends AbstractDownloader {
                         activeTorrent.getInfoHash(),
                         activeTorrent.getProgress() / 100.0d,
                         activeTorrent.getSize(),
+                        activeTorrent.getCompletedSize(),
                         activeTorrent.getUploadPayloadRate(),
                         activeTorrent.getDownloadPayloadRate(),
                         peers,
@@ -146,11 +159,26 @@ public class Deluge extends AbstractDownloader {
     }
 
     @Override
+    public List<Torrent> getAllTorrents() {
+        return getTorrents();
+    }
+
+    @Override
     public List<Peer> getPeers(Torrent torrent) {
         if (!(torrent instanceof DelugeTorrent delugeTorrent)) {
             throw new IllegalStateException("The torrent object not a instance of DelugeTorrent");
         }
         return delugeTorrent.getPeers();
+    }
+
+    @Override
+    public List<Tracker> getTrackers(Torrent torrent) {
+        return List.of();
+    }
+
+    @Override
+    public void setTrackers(Torrent torrent, List<Tracker> trackers) {
+
     }
 
     @SneakyThrows
@@ -165,7 +193,7 @@ public class Deluge extends AbstractDownloader {
 
     private void setBanListFull(Collection<PeerAddress> fullList) {
         try {
-            this.client.replaceBannedPeers(fullList.stream().map(PeerAddress::getIp).toList());
+            this.client.replaceBannedPeers(fullList.stream().map(PeerAddress::getIp).distinct().toList());
         } catch (DelugeException e) {
             log.error(tlUI(Lang.DOWNLOADER_DELUGE_API_ERROR), e);
         }
@@ -173,7 +201,7 @@ public class Deluge extends AbstractDownloader {
 
     private void setBanListIncrement(Collection<BanMetadata> added) {
         try {
-            this.client.banPeers(added.stream().map(bm -> bm.getPeer().getAddress().getIp()).toList());
+            this.client.banPeers(added.stream().map(bm -> bm.getPeer().getAddress().getIp()).distinct().toList());
         } catch (DelugeException e) {
             log.error(tlUI(Lang.DOWNLOADER_DELUGE_API_ERROR), e);
         }
@@ -243,6 +271,7 @@ public class Deluge extends AbstractDownloader {
         private String rpcUrl;
         private boolean incrementBan;
         private boolean ignorePrivate;
+        private boolean paused;
 
         public static Config readFromYaml(ConfigurationSection section) {
             Config config = new Config();
@@ -257,6 +286,7 @@ public class Deluge extends AbstractDownloader {
             config.setVerifySsl(section.getBoolean("verify-ssl", true));
             config.setIncrementBan(section.getBoolean("increment-ban", true));
             config.setIgnorePrivate(section.getBoolean("ignore-private", false));
+            config.setPaused(section.getBoolean("paused", false));
             return config;
         }
 
@@ -270,6 +300,7 @@ public class Deluge extends AbstractDownloader {
             section.set("increment-ban", incrementBan);
             section.set("verify-ssl", verifySsl);
             section.set("ignore-private", ignorePrivate);
+            section.set("paused", paused);
             return section;
         }
     }

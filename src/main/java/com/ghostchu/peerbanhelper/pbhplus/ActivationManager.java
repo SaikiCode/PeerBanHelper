@@ -1,9 +1,10 @@
 package com.ghostchu.peerbanhelper.pbhplus;
 
 import com.ghostchu.peerbanhelper.Main;
+import com.ghostchu.peerbanhelper.event.PBHLookAndFeelNeedReloadEvent;
+import com.ghostchu.peerbanhelper.exchange.ExchangeMap;
 import com.ghostchu.peerbanhelper.text.Lang;
 import com.ghostchu.peerbanhelper.util.MsgUtil;
-import com.ghostchu.peerbanhelper.util.encrypt.ActivationKeyUtil;
 import com.ghostchu.simplereloadlib.ReloadResult;
 import com.ghostchu.simplereloadlib.Reloadable;
 import lombok.Getter;
@@ -11,6 +12,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.jetbrains.annotations.Nullable;
 import org.springframework.stereotype.Component;
 
+import java.util.Base64;
 import java.util.Date;
 
 import static com.ghostchu.peerbanhelper.text.TextManager.tlUI;
@@ -20,13 +22,15 @@ import static com.ghostchu.peerbanhelper.text.TextManager.tlUI;
  */
 @Component
 @Slf4j
-public class ActivationManager implements Reloadable {
+public final class ActivationManager implements Reloadable {
+    private final ActivationKeyManager activationKeyManager;
     @Getter
     private String keyText;
     @Nullable
-    private ActivationKeyUtil.KeyData keyData = null;
+    private ActivationKeyManager.KeyData keyData = null;
 
-    public ActivationManager() {
+    public ActivationManager(ActivationKeyManager activationKeyManager) {
+        this.activationKeyManager = activationKeyManager;
         load();
         Main.getReloadManager().register(this);
     }
@@ -37,9 +41,15 @@ public class ActivationManager implements Reloadable {
             return;
         }
         keyText = keyText.trim();
-        this.keyData = ActivationKeyUtil.fromKey(this.keyText);
+        this.keyData = activationKeyManager.fromKey(ActivationKeyManager.OFFICIAL_PUBLIC_KEY, this.keyText);
+        if (this.keyData == null) {
+            this.keyData = activationKeyManager.fromKey(Base64.getEncoder().encodeToString(activationKeyManager.getLocalKeyPair().getValue().getEncoded()), this.keyText);
+        }
         if (keyData != null) {
-            if (this.isActivated()) {
+            if (this.isActivated() && !this.isLocalLicense()) {
+                ExchangeMap.PBH_PLUS_ACTIVATED = true;
+                ExchangeMap.GUI_DISPLAY_FLAGS.add(new ExchangeMap.DisplayFlag("PBH Plus", 10, tlUI(Lang.PBH_PLUS_THANKS_FOR_DONATION_GUI_TITLE)));
+                Main.getEventBus().post(new PBHLookAndFeelNeedReloadEvent());
                 log.info(tlUI(Lang.DONATION_KEY_VERIFICATION_SUCCESSFUL, keyData.getLicenseTo(), keyData.getSource(), MsgUtil.getDateFormatter().format(new Date(keyData.getExpireAt()))));
             }
         }
@@ -56,7 +66,7 @@ public class ActivationManager implements Reloadable {
      *
      * @return 激活信息
      */
-    public @Nullable ActivationKeyUtil.KeyData getKeyData() {
+    public @Nullable ActivationKeyManager.KeyData getKeyData() {
         return keyData;
     }
 
@@ -67,5 +77,9 @@ public class ActivationManager implements Reloadable {
      */
     public boolean isActivated() {
         return this.keyData != null && System.currentTimeMillis() < this.keyData.getExpireAt();
+    }
+
+    public boolean isLocalLicense() {
+        return this.keyData != null && "local".equals(this.keyData.getType());
     }
 }

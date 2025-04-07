@@ -9,10 +9,21 @@ import lombok.extern.slf4j.Slf4j;
 import org.bspfsystems.yamlconfiguration.configuration.ConfigurationSection;
 
 @Slf4j
-public class QBittorrent extends AbstractQbittorrent {
+public final class QBittorrent extends AbstractQbittorrent {
 
     public QBittorrent(String name, QBittorrentConfig config, AlertManager alertManager) {
         super(name, config, alertManager);
+    }
+
+    @Override
+    public boolean isPaused() {
+        return config.isPaused();
+    }
+
+    @Override
+    public void setPaused(boolean paused) {
+        super.setPaused(paused);
+        config.setPaused(paused);
     }
 
     public static QBittorrent loadFromConfig(String name, JsonObject section, AlertManager alertManager) {

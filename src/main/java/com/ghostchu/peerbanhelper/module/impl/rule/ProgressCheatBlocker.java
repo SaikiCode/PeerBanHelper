@@ -1,9 +1,11 @@
 package com.ghostchu.peerbanhelper.module.impl.rule;
 
+import com.ghostchu.peerbanhelper.ExternalSwitch;
 import com.ghostchu.peerbanhelper.Main;
 import com.ghostchu.peerbanhelper.database.dao.impl.ProgressCheatBlockerPersistDao;
 import com.ghostchu.peerbanhelper.downloader.Downloader;
 import com.ghostchu.peerbanhelper.downloader.DownloaderFeatureFlag;
+import com.ghostchu.peerbanhelper.event.PeerUnbanEvent;
 import com.ghostchu.peerbanhelper.module.AbstractRuleFeatureModule;
 import com.ghostchu.peerbanhelper.module.CheckResult;
 import com.ghostchu.peerbanhelper.module.PeerAction;
@@ -23,6 +25,7 @@ import com.ghostchu.simplereloadlib.Reloadable;
 import com.google.common.cache.Cache;
 import com.google.common.cache.CacheBuilder;
 import com.google.common.cache.Weigher;
+import com.google.common.eventbus.Subscribe;
 import inet.ipaddr.IPAddress;
 import io.javalin.http.Context;
 import lombok.AllArgsConstructor;
@@ -45,10 +48,10 @@ import static com.ghostchu.peerbanhelper.text.TextManager.tlUI;
 @Component
 @Slf4j
 @IgnoreScan
-public class ProgressCheatBlocker extends AbstractRuleFeatureModule implements Reloadable {
+public final class ProgressCheatBlocker extends AbstractRuleFeatureModule implements Reloadable {
     private final Deque<ClientTaskRecord> pendingPersistQueue = new ConcurrentLinkedDeque<>();
     private final Cache<Client, List<ClientTask>> progressRecorder = CacheBuilder.newBuilder()
-            .expireAfterAccess(30, TimeUnit.MINUTES)
+            .expireAfterAccess(ExternalSwitch.parseLong("pbh.module.progressCheatBlocker.recorder.timeout", 1800000), TimeUnit.MILLISECONDS)
             .weigher((Weigher<Client, List<ClientTask>>) (key, value) -> {
                 int totalSize = calcClientSize(key);
                 for (ClientTask clientTask : value) {
@@ -57,7 +60,7 @@ public class ProgressCheatBlocker extends AbstractRuleFeatureModule implements R
                 totalSize += 12;
                 return totalSize;
             })
-            .maximumWeight(12000000)
+            .maximumWeight(ExternalSwitch.parseLong("pbh.module.progressCheatBlocker.recorder.weight", 12000000))
             .removalListener(notification -> {
                 Client key = notification.getKey();
                 List<ClientTask> tasks = notification.getValue();
@@ -103,12 +106,44 @@ public class ProgressCheatBlocker extends AbstractRuleFeatureModule implements R
         Main.getReloadManager().register(this);
     }
 
+    @Subscribe
+    public void onPeerUnBan(PeerUnbanEvent event) {
+        IPAddress peerPrefix;
+        IPAddress peerIp = event.getPeer().getAddress();
+        if (peerIp.isIPv4()) {
+            peerPrefix = IPAddressUtil.toPrefixBlock(peerIp, ipv4PrefixLength);
+        } else {
+            peerPrefix = IPAddressUtil.toPrefixBlock(peerIp, ipv6PrefixLength);
+        }
+        String peerIpString = peerIp.toString();
+        Client client = new Client(peerPrefix.toString(), event.getBanMetadata().getTorrent().getId());
+        // 从缓存取数据
+        List<ClientTask> lastRecordedProgress = null;
+        try {
+            // 如果未命中缓存 只导入当前种子记录的ip
+            lastRecordedProgress = progressRecorder.get(client, () -> loadClientTasks(client));
+        } catch (ExecutionException e) {
+            log.error("Unhandled exception during load cached record data", e);
+        }
+        if (lastRecordedProgress == null) lastRecordedProgress = new CopyOnWriteArrayList<>();
+        ClientTask clientTask = lastRecordedProgress.stream().filter(task -> task.getPeerIp().equals(peerIpString)).findFirst().orElse(null);
+        if (clientTask != null) {
+            clientTask.setBanDelayWindowEndAt(0L);
+            clientTask.setLastReportProgress(0);
+            clientTask.setLastReportUploaded(0);
+            clientTask.setTrackingUploadedIncreaseTotal(0);
+            clientTask.setRewindCounter(0);
+            clientTask.setProgressDifferenceCounter(0);
+            clientTask.setFastPcbTestExecuteAt(0);
+            progressRecorder.put(client, lastRecordedProgress);
+        }
+    }
+
     private void cleanDatabase() {
         try {
             progressCheatBlockerPersistDao.cleanupDatabase(new Timestamp(System.currentTimeMillis() - persistDuration));
         } catch (Throwable e) {
             log.error("Unable to remove expired data from database", e);
-            ;
         }
     }
 
@@ -229,6 +264,7 @@ public class ProgressCheatBlocker extends AbstractRuleFeatureModule implements R
         final long actualUploaded = Math.max(peer.getUploaded(), Math.max(clientTask.getLastReportUploaded(), prefixTrackingUploadedIncreaseTotal));
         try {
             final long torrentSize = torrent.getSize();
+            final long completedSize = torrent.getCompletedSize();
             // 过滤
             if (torrentSize <= 0) {
                 return pass();
@@ -253,17 +289,32 @@ public class ProgressCheatBlocker extends AbstractRuleFeatureModule implements R
             final double actualProgress = (double) actualUploaded / torrentSize; // 实际进度
             final double clientProgress = peer.getProgress(); // 客户端汇报进度
             // actualUploaded = -1 代表客户端不支持统计此 Peer 总上传量
-            if (actualUploaded != -1 && blockExcessiveClients && (actualUploaded > torrentSize)) {
-                // 下载过量，检查
-                long maxAllowedExcessiveThreshold = (long) (torrentSize * excessiveThreshold);
-                if (actualUploaded > maxAllowedExcessiveThreshold) {
-                    clientTask.setBanDelayWindowEndAt(0L);
-                    progressRecorder.invalidate(client); // 封禁时，移除缓存
-                    return new CheckResult(getClass(), PeerAction.BAN, banDuration, new TranslationComponent(Lang.PCB_RULE_REACHED_MAX_ALLOWED_EXCESSIVE_THRESHOLD),
-                            new TranslationComponent(Lang.MODULE_PCB_EXCESSIVE_DOWNLOAD,
-                                    torrentSize,
-                                    actualUploaded,
-                                    maxAllowedExcessiveThreshold));
+            if (actualUploaded != -1 && blockExcessiveClients) {
+                if (actualUploaded > torrentSize) {
+                    // 下载量超过种子大小，检查
+                    long maxAllowedExcessiveThreshold = (long) (torrentSize * excessiveThreshold);
+                    if (actualUploaded > maxAllowedExcessiveThreshold) {
+                        clientTask.setBanDelayWindowEndAt(0L);
+                        progressRecorder.invalidate(client); // 封禁时，移除缓存
+                        return new CheckResult(getClass(), PeerAction.BAN, banDuration, new TranslationComponent(Lang.PCB_RULE_REACHED_MAX_ALLOWED_EXCESSIVE_THRESHOLD),
+                                new TranslationComponent(Lang.MODULE_PCB_EXCESSIVE_DOWNLOAD,
+                                        torrentSize,
+                                        actualUploaded,
+                                        maxAllowedExcessiveThreshold));
+                    }
+                } else if (ExternalSwitch.parse("pbh.pcb.disable-completed-excessive") == null && completedSize > 0 && actualUploaded > completedSize) {
+                    // 下载量超过任务大小，检查
+                    long maxAllowedExcessiveThreshold = (long) (completedSize * excessiveThreshold);
+                    if (actualUploaded > maxAllowedExcessiveThreshold) {
+                        clientTask.setBanDelayWindowEndAt(0L);
+                        progressRecorder.invalidate(client); // 封禁时，移除缓存
+                        return new CheckResult(getClass(), PeerAction.BAN, banDuration, new TranslationComponent(Lang.PCB_RULE_REACHED_MAX_ALLOWED_EXCESSIVE_THRESHOLD),
+                                new TranslationComponent(Lang.MODULE_PCB_EXCESSIVE_DOWNLOAD_INCOMPLETE,
+                                        torrentSize,
+                                        completedSize,
+                                        actualUploaded,
+                                        maxAllowedExcessiveThreshold));
+                    }
                 }
             }
             // 如果客户端报告自己进度更多，则跳过检查
@@ -314,7 +365,7 @@ public class ProgressCheatBlocker extends AbstractRuleFeatureModule implements R
         }
     }
 
-    private boolean isUploadingToPeer(Peer peer){
+    private boolean isUploadingToPeer(Peer peer) {
         return peer.getUploadSpeed() > 0 || peer.getUploaded() > 0;
     }
 

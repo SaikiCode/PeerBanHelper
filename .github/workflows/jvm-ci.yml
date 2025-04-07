@@ -12,26 +12,104 @@ on:
   push:
   workflow_dispatch:
 jobs:
-  CI:
+  Build_Executable:
+    name: Build JAR Files
     uses: ./.github/workflows/build_maven.yml
     secrets: inherit
   Build_Installers:
-    needs: CI
+    name: Generate Installers
+    needs: Build_Executable
     uses: ./.github/workflows/build_installers.yml
     secrets: inherit
+  Build_Portable:
+    name: Generate Portable Version
+    needs: Build_Executable
+    uses: ./.github/workflows/build_portable.yml
   Build_SPK:
-    needs: CI
+    name: Generate Synology Package
+    needs: Build_Executable
     uses: ./.github/workflows/build_spk.yml
     with:
       image: ghostchu/peerbanhelper-snapshot:sha-$(git rev-parse --short ${{ github.sha }})
   Build_DEB:
-    needs: CI
+    name: Generate Debian Package
+    needs: Build_Executable
     uses: ./.github/workflows/build_deb.yml
   Build_PKG:
-    needs: CI
+    name: Generate FreeBSD Package
+    needs: Build_Executable
     uses: ./.github/workflows/build_pkg.yml
+  Create_Torrent:
+    name: Create Torrent
+    needs: [ Build_Executable, Build_Installers, Build_SPK, Build_DEB, Build_PKG, Build_Portable ]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - id: java_info
+        uses: YunaBraska/java-info-action@main
+      # download artifacts
+      - uses: actions/download-artifact@v4
+        with:
+          name: maven-dist
+          path: target/
+      - uses: actions/download-artifact@v4
+        with:
+          name: installer-dist
+          path: target/media
+      - uses: actions/download-artifact@v4
+        with:
+          name: spk-dist
+          path: target/media
+      - uses: actions/download-artifact@v4
+        with:
+          name: deb-dist
+          path: target/media
+      - uses: actions/download-artifact@v4
+        with:
+          name: portable-dist
+          path: target/media
+      - uses: actions/download-artifact@v4
+        with:
+          name: freebsd-pkg-13.4-dist
+          path: target/media
+      - uses: actions/download-artifact@v4
+        with:
+          name: freebsd-pkg-14.1-dist
+          path: target/media
+      # create zip ball named PeerBanHelper_installers_${{ github.ref }}.zip with files inside target/media/
+      - name: Zip medias for create torrent
+        run: tar -zcvf PeerBanHelper_Installers.tar.gz target/media/
+      # prepare mktorrent util
+      - name: Install mktorrent
+        run: sudo apt-get install -y mktorrent
+      # make torrent
+      - name: Determine version
+        id: set_version
+        run: |
+          if [[ "${{ github.ref_type }}" == "tag" ]]; then
+            echo "version=${{ github.ref_name }}" >> $GITHUB_OUTPUT
+          else
+            SHORT_SHA=$(git rev-parse --short "${{ github.sha }}")
+            echo "version=sha-$SHORT_SHA" >> $GITHUB_OUTPUT
+          fi
+      - name: Create copy of Installers archive
+        run: cp PeerBanHelper_Installers.tar.gz "PeerBanHelper_Installers_${{ steps.set_version.outputs.version }}.tar.gz"
+      - name: Make torrent
+        run: |
+          mktorrent -t 8 \
+          -a udp://tracker.opentrackr.org:1337/announce \
+          -a udp://tracker.publicbt.com:80/announce \
+          -a udp://tracker.openbittorrent.com:80/announce \
+          -a https://sparkle.ghostchu-services.top/announce \
+          -a udp://opentracker.io:6969/announce \
+          -a wss://tracker.openwebtorrent.com:443/announce \
+          -c "PeerBanHelper/${{ github.ref }} (${{ github.sha }}) on ${{ github.repository }}. Published by ${{ github.repository_owner }}." \
+          -w "https://github.com/${{ github.repository }}/releases/download/${{ steps.set_version.outputs.version }}/PeerBanHelper_Installers.tar.gz" \
+          -o peerbanhelper.torrent \
+          "PeerBanHelper_Installers_${{ steps.set_version.outputs.version }}.tar.gz"
   Build_Docker:
-    needs: CI
+    name: Build and Push Docker Images
+    needs: Build_Executable
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v4
@@ -50,7 +128,7 @@ jobs:
         password: ${{ secrets.DOCKER_TOKEN }}
     - name: Extract metadata (tags, labels) for Docker
       id: meta
-      uses: docker/metadata-action@v5.5.1
+      uses: docker/metadata-action@v5.7.0
       with:
         images: ghostchu/peerbanhelper-snapshot
         tags: |
@@ -63,7 +141,7 @@ jobs:
           type=raw,ci
           type=sha
     - name: Build and push Docker image
-      uses: docker/build-push-action@v6.9.0
+      uses: docker/build-push-action@v6.15.0
       with:
         context: .
         file: ./Dockerfile
@@ -71,9 +149,43 @@ jobs:
         platforms: |
           linux/amd64
           linux/arm64/v8
-          linux/riscv64
-          linux/ppc64le
         tags: ${{ steps.meta.outputs.tags }}
         labels: ${{ steps.meta.outputs.labels }}-jvm-universal
         cache-from: type=gha
-        cache-to: type=gha,mode=max
+        cache-to: type=gha,mode=min
+  Build_Docker_Standalone:
+    name: Build Standalone Docker Images
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+    - name: Set Up QEMU
+      uses: docker/setup-qemu-action@v3
+    - name: Set Up Buildx
+      uses: docker/setup-buildx-action@v3
+    - name: Extract metadata (tags, labels) for Docker
+      id: meta
+      uses: docker/metadata-action@v5.7.0
+      with:
+        images: ghostchu/peerbanhelper-snapshot
+        tags: |
+          type=ref,event=branch
+          type=ref,event=tag
+          type=ref,event=pr
+          type=semver,pattern={{version}}
+          type=semver,pattern={{major}}.{{minor}}
+          type=raw,ci-jvm-universal
+          type=raw,ci
+          type=sha
+    - name: Build and push Docker image
+      uses: docker/build-push-action@v6.15.0
+      with:
+        context: .
+        file: ./Dockerfile
+        push: false
+        platforms: |
+          linux/amd64
+          linux/arm64/v8
+        tags: ${{ steps.meta.outputs.tags }}
+        labels: ${{ steps.meta.outputs.labels }}-jvm-universal
+        cache-from: type=gha
+        cache-to: type=gha,mode=min

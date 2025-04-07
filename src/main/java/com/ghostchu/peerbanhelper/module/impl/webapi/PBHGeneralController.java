@@ -1,6 +1,8 @@
 package com.ghostchu.peerbanhelper.module.impl.webapi;
 
+import com.ghostchu.peerbanhelper.ExternalSwitch;
 import com.ghostchu.peerbanhelper.Main;
+import com.ghostchu.peerbanhelper.PeerBanHelperServer;
 import com.ghostchu.peerbanhelper.module.AbstractFeatureModule;
 import com.ghostchu.peerbanhelper.module.FeatureModule;
 import com.ghostchu.peerbanhelper.module.ModuleManager;
@@ -8,6 +10,7 @@ import com.ghostchu.peerbanhelper.text.Lang;
 import com.ghostchu.peerbanhelper.text.TranslationComponent;
 import com.ghostchu.peerbanhelper.util.IPAddressUtil;
 import com.ghostchu.peerbanhelper.util.MiscUtil;
+import com.ghostchu.peerbanhelper.util.MsgUtil;
 import com.ghostchu.peerbanhelper.util.context.IgnoreScan;
 import com.ghostchu.peerbanhelper.util.json.JsonUtil;
 import com.ghostchu.peerbanhelper.util.rule.ModuleMatchCache;
@@ -39,6 +42,8 @@ import java.io.FileOutputStream;
 import java.io.IOException;
 import java.lang.management.ManagementFactory;
 import java.lang.management.MemoryUsage;
+import java.lang.management.ThreadInfo;
+import java.lang.management.ThreadMXBean;
 import java.nio.file.Files;
 import java.text.SimpleDateFormat;
 import java.util.*;
@@ -48,7 +53,7 @@ import static com.ghostchu.peerbanhelper.text.TextManager.tl;
 @Slf4j
 @Component
 @IgnoreScan
-public class PBHGeneralController extends AbstractFeatureModule {
+public final class PBHGeneralController extends AbstractFeatureModule {
     private static final Gson GSON = JsonUtil.getGson().newBuilder()
             .setObjectToNumberStrategy(ToNumberPolicy.LONG_OR_DOUBLE)
             .create();
@@ -58,6 +63,8 @@ public class PBHGeneralController extends AbstractFeatureModule {
     private ModuleMatchCache moduleMatchCache;
     @Autowired
     private ModuleManager moduleManager;
+    @Autowired
+    private PeerBanHelperServer peerBanHelperServer;
 
     @Override
     public boolean isConfigurable() {
@@ -79,10 +86,43 @@ public class PBHGeneralController extends AbstractFeatureModule {
         webContainer.javalin()
                 .get("/api/general/status", this::handleStatusGet, Role.USER_READ)
                 .get("/api/general/checkModuleAvailable", this::handleModuleAvailable, Role.USER_READ)
+                .get("/api/general/stacktrace", this::handleDumpStackTrace, Role.USER_READ)
                 .get("/api/general/heapdump", this::handleHeapDump, Role.USER_WRITE)
                 .post("/api/general/reload", this::handleReloading, Role.USER_WRITE)
+                .get("/api/general/global", this::handleGlobalConfigRead, Role.USER_READ)
+                .patch("/api/general/global", this::handleGlobalConfig, Role.USER_WRITE)
                 .get("/api/general/{configName}", this::handleConfigGet, Role.USER_WRITE)
                 .put("/api/general/{configName}", this::handleConfigPut, Role.USER_WRITE);
+    }
+
+    private void handleDumpStackTrace(Context context) {
+        StringBuilder threadDump = new StringBuilder();
+        ThreadMXBean threadMXBean = ManagementFactory.getThreadMXBean();
+        for (ThreadInfo threadInfo : threadMXBean.dumpAllThreads(true, true)) {
+            threadDump.append(MsgUtil.threadInfoToString(threadInfo));
+        }
+        if ("application/json".equals(context.contentType())) {
+            context.json(new StdResp(true, null, threadDump.toString()));
+        } else {
+            context.result(threadDump.toString());
+        }
+    }
+
+    private void handleGlobalConfigRead(Context context) {
+        Map<String, Object> data = new LinkedHashMap<>();
+        data.put("globalPaused", peerBanHelperServer.isGlobalPaused());
+        context.json(new StdResp(true, null, data));
+    }
+
+    private void handleGlobalConfig(Context context) {
+        var body = context.bodyAsClass(GlobalOptionPatch.class);
+        if (body == null) {
+            throw new IllegalArgumentException("Request body cannot be null");
+        }
+        if (body.globalPaused() != null) {
+            peerBanHelperServer.setGlobalPaused(body.globalPaused());
+        }
+        context.json(new StdResp(true, "OK!", null));
     }
 
     private void handleModuleAvailable(Context context) {
@@ -92,9 +132,9 @@ public class PBHGeneralController extends AbstractFeatureModule {
         }
         for (FeatureModule module : moduleManager.getModules()) {
             if (module.getName().equalsIgnoreCase(moduleName)
-                || module.getConfigName().equalsIgnoreCase(moduleName)
-                || module.getClass().getName().equalsIgnoreCase(moduleName)
-                || module.getClass().getSimpleName().equalsIgnoreCase(moduleName)) {
+                    || module.getConfigName().equalsIgnoreCase(moduleName)
+                    || module.getClass().getName().equalsIgnoreCase(moduleName)
+                    || module.getClass().getSimpleName().equalsIgnoreCase(moduleName)) {
                 if (module.isModuleEnabled()) {
                     context.json(new StdResp(true, null, true));
                     return;
@@ -138,7 +178,7 @@ public class PBHGeneralController extends AbstractFeatureModule {
 
     private Map<String, Object> generatePbhData() {
         long compile_time = 0;
-        String release = System.getProperty("pbh.release");
+        String release = ExternalSwitch.parse("pbh.release");
         if (release == null) {
             release = "unknown";
         }
@@ -161,9 +201,10 @@ public class PBHGeneralController extends AbstractFeatureModule {
     }
 
     private Map<String, Object> generateSystemData(Context context, SystemInfo systemInfo) {
+
+        Map<String, Object> os = new LinkedHashMap<>();
         var osMXBean = ManagementFactory.getOperatingSystemMXBean();
         var operatingSystem = systemInfo.getOperatingSystem();
-        Map<String, Object> os = new LinkedHashMap<>();
         if (osMXBean.getName().contains("Windows")) {
             os.put("os", "Windows");
             os.put("version", String.valueOf(operatingSystem));
@@ -173,15 +214,6 @@ public class PBHGeneralController extends AbstractFeatureModule {
         }
         os.put("architecture", osMXBean.getArch());
         os.put("cores", osMXBean.getAvailableProcessors());
-        //os.put("family", operatingSystem.getFamily());
-        //os.put("bitness", operatingSystem.getBitness());
-        //os.put("manufacturer", operatingSystem.getManufacturer());
-        //var versionInfo = operatingSystem.getVersionInfo();
-        //os.put("build_number", versionInfo.getBuildNumber());
-        //os.put("code_name", versionInfo.getCodeName());
-        //os.put("os_version", versionInfo.getVersion());
-        //os.put("boot_time", operatingSystem.getSystemBootTime());
-        //os.put("up_time", operatingSystem.getSystemUptime());
         var mem = generateSystemMemoryData(systemInfo.getHardware());
         os.put("memory", mem);
         os.put("load", osMXBean.getSystemLoadAverage());
@@ -191,7 +223,6 @@ public class PBHGeneralController extends AbstractFeatureModule {
     }
 
     private Map<String, Object> generateNetworkStats(Context context) {
-        //var clientIp = IPAddressUtil.getIPAddress(context.ip()).toCompressedString();
         var userIp = IPAddressUtil.getIPAddress(userIp(context)).toCompressedString();
         Map<String, Object> network = new LinkedHashMap<>();
         var proxy = Main.getMainConfig().getInt("proxy.setting");
@@ -199,7 +230,6 @@ public class PBHGeneralController extends AbstractFeatureModule {
         network.put("use_proxy", proxy == 1 || proxy == 2 || proxy == 3);
         network.put("reverse_proxy", MiscUtil.isUsingReserveProxy(context));
         network.put("client_ip", userIp);
-        //network.put("user_ip", userIp);
         return network;
     }
 
@@ -210,10 +240,6 @@ public class PBHGeneralController extends AbstractFeatureModule {
         jvm.put("vendor", runtimeMXBean.getVmVendor());
         jvm.put("runtime", runtimeMXBean.getVmName());
         jvm.put("bitness", Short.parseShort(System.getProperty("sun.arch.data.model")));
-        //jvm.put("specification", runtimeMXBean.getSpecName());
-        //jvm.put("class_version", System.getProperty("java.class.version"));
-        //jvm.put("uptime", runtimeMXBean.getUptime());
-        //jvm.put("start_time", runtimeMXBean.getStartTime());
         Map<String, Object> mem = new LinkedHashMap<>();
         mem.put("heap", generateMemoryData(ManagementFactory.getMemoryMXBean().getHeapMemoryUsage()));
         mem.put("non_heap", generateMemoryData(ManagementFactory.getMemoryMXBean().getNonHeapMemoryUsage()));
@@ -241,6 +267,7 @@ public class PBHGeneralController extends AbstractFeatureModule {
     }
 
     private void handleReloading(Context context) {
+        Main.setupConfiguration();
         var result = Main.getReloadManager().reload();
         List<ReloadEntry> entryList = new ArrayList<>();
         result.forEach((container, r) -> {
@@ -289,6 +316,7 @@ public class PBHGeneralController extends AbstractFeatureModule {
                 yamlConfiguration.load(Main.getProfileConfigFile());
                 stringListToMapList(yamlConfiguration, "module.peer-id-blacklist", "banned-peer-id");
                 stringListToMapList(yamlConfiguration, "module.client-name-blacklist", "banned-client-name");
+                stringListToMapList(yamlConfiguration, "module.ptr-blacklist", "ptr-rules");
             }
             default -> {
                 context.status(HttpStatus.NOT_FOUND);
@@ -427,6 +455,15 @@ public class PBHGeneralController extends AbstractFeatureModule {
                         value = bannedList;
                     }
                 }
+                case "ptr-rules" -> {
+                    if ("module.ptr-blacklist".equals(path)) {
+                        List<String> bannedList = ((List<?>) value).stream()
+                                .filter(Map.class::isInstance)
+                                .map(GSON::toJson)
+                                .toList();
+                        value = bannedList;
+                    }
+                }
             }
             // 如果值是 Map，递归替换子 cfg 中的键
             if (value instanceof Map<?, ?> map) {
@@ -451,6 +488,12 @@ public class PBHGeneralController extends AbstractFeatureModule {
 
     @Override
     public void onDisable() {
+
+    }
+
+    public record GlobalOptionPatch(
+            Boolean globalPaused
+    ) {
 
     }
 

@@ -26,7 +26,7 @@ import java.util.*;
 import static com.ghostchu.peerbanhelper.Main.DEF_LOCALE;
 
 @Slf4j
-public class TextManager implements Reloadable {
+public final class TextManager implements Reloadable {
     public static TextManager INSTANCE_HOLDER = new TextManager();
     public final Set<PostProcessor> postProcessors = new LinkedHashSet<>();
     // <File <Locale, Section>>
@@ -60,6 +60,7 @@ public class TextManager implements Reloadable {
 //    }
 
     public static String tl(String locale, Lang key, Object... params) {
+        locale = locale.toLowerCase(Locale.ROOT).replace("-", "_");
         return tl(locale, new TranslationComponent(key.getKey(), (Object[]) convert(locale, params)));
     }
 
@@ -72,6 +73,12 @@ public class TextManager implements Reloadable {
                 log.warn("The locale {} are not supported and fallback locale en_us load failed.", locale);
                 return "Unsupported locale " + locale;
             }
+        }
+        if (translationComponent == null) {
+            return "null";
+        }
+        if (translationComponent.getKey().isBlank()) {
+            return "";
         }
         String str = yamlConfiguration.getString(translationComponent.getKey());
         if (str == null) {
@@ -113,6 +120,7 @@ public class TextManager implements Reloadable {
 //                    continue;
 //                }
                 components[i] = obj.toString();
+
             } catch (Exception exception) {
                 log.debug("Failed to process the object: {}", obj);
                 components[i] = String.valueOf(obj); // null safe
@@ -139,6 +147,7 @@ public class TextManager implements Reloadable {
         Collection<String> pending = getOverrideLocales(languageFilesManager.getDistributions().keySet());
         log.debug("Pending: {}", Arrays.toString(pending.toArray()));
         pending.forEach(locale -> {
+            locale = locale.toLowerCase(Locale.ROOT).replace("-", "_");
             File file = getOverrideLocaleFile(locale);
             if (file.exists()) {
                 YamlConfiguration configuration = new YamlConfiguration();
@@ -156,7 +165,7 @@ public class TextManager implements Reloadable {
 
         // Remove disabled locales
         //List<String> enabledLanguagesRegex = .getStringList("enabled-languages");
-        //enabledLanguagesRegex.replaceAll(s -> s.toLowerCase(Locale.ROOT).replace("-", "_"));
+        //enabledLanguagesRegex.replaceAll(s -> s.toLowerCase(Locale.ROOT));
 //        Iterator<String> it = pending.iterator();
 //        while (it.hasNext()) {
 //            String locale = it.next();
@@ -225,7 +234,7 @@ public class TextManager implements Reloadable {
             try {
                 YamlConfiguration configuration = new YamlConfiguration();
                 configuration.loadFromString(new String(re.getContentAsByteArray(), StandardCharsets.UTF_8));
-                availableLang.put(langName.toLowerCase(Locale.ROOT).replace("-", "_"), configuration);
+                availableLang.put(langName.toLowerCase(Locale.ROOT), configuration);
             } catch (IOException | InvalidConfigurationException e) {
                 log.warn("Failed to load bundled translation.", e);
             }
@@ -276,6 +285,7 @@ public class TextManager implements Reloadable {
 
     @NotNull
     private File getOverrideLocaleFile(@NotNull String locale) {
+        locale = locale.toLowerCase(Locale.ROOT).replace("-", "_");
         File file;
         // bug fixes workaround
         file = new File(overrideDirectory, locale + ".yml");

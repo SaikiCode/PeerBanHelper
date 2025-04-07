@@ -8,18 +8,28 @@ import com.ghostchu.peerbanhelper.config.MainConfigUpdateScript;
 import com.ghostchu.peerbanhelper.config.PBHConfigUpdater;
 import com.ghostchu.peerbanhelper.config.ProfileUpdateScript;
 import com.ghostchu.peerbanhelper.event.PBHShutdownEvent;
+import com.ghostchu.peerbanhelper.exchange.ExchangeMap;
 import com.ghostchu.peerbanhelper.gui.PBHGuiManager;
 import com.ghostchu.peerbanhelper.gui.impl.console.ConsoleGuiImpl;
 import com.ghostchu.peerbanhelper.gui.impl.swing.SwingGuiImpl;
 import com.ghostchu.peerbanhelper.text.Lang;
 import com.ghostchu.peerbanhelper.text.TextManager;
+import com.ghostchu.peerbanhelper.util.*;
+import com.ghostchu.peerbanhelper.util.encrypt.RSAUtils;
+import com.ghostchu.peerbanhelper.util.json.JsonUtil;
+import com.ghostchu.peerbanhelper.util.paging.Pageable;
 import com.ghostchu.simplereloadlib.ReloadManager;
 import com.ghostchu.simplereloadlib.ReloadResult;
 import com.ghostchu.simplereloadlib.ReloadStatus;
 import com.google.common.eventbus.EventBus;
+import com.googlecode.aviator.AviatorEvaluator;
+import com.googlecode.aviator.EvalMode;
+import com.googlecode.aviator.Options;
+import com.googlecode.aviator.runtime.JavaMethodReflectionFunctionMissing;
 import lombok.Getter;
 import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.commons.lang3.StringUtils;
 import org.bspfsystems.yamlconfiguration.configuration.InvalidConfigurationException;
 import org.bspfsystems.yamlconfiguration.file.YamlConfiguration;
 import org.jetbrains.annotations.Nullable;
@@ -29,16 +39,20 @@ import org.springframework.beans.factory.support.BeanDefinitionBuilder;
 import org.springframework.beans.factory.support.DefaultListableBeanFactory;
 import org.springframework.context.ConfigurableApplicationContext;
 import org.springframework.context.annotation.AnnotationConfigApplicationContext;
+import oshi.SystemInfo;
 
 import javax.swing.*;
 import java.awt.*;
 import java.io.File;
 import java.io.IOException;
 import java.io.InputStream;
+import java.lang.management.ManagementFactory;
+import java.math.MathContext;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.util.Arrays;
 import java.util.Locale;
+import java.util.Properties;
 
 @Slf4j
 public class Main {
@@ -46,7 +60,7 @@ public class Main {
     private static final EventBus eventBus = new EventBus();
     @Getter
     private static final ReloadManager reloadManager = new ReloadManager();
-    public static String DEF_LOCALE = Locale.getDefault().toLanguageTag();
+    public static String DEF_LOCALE = Locale.getDefault().toLanguageTag().toLowerCase(Locale.ROOT).replace("-", "_");
     @Getter
     private static File dataDirectory;
     @Getter
@@ -54,7 +68,6 @@ public class Main {
     @Getter
     private static File configDirectory;
     private static File pluginDirectory;
-    private static File libraryDirectory;
     @Getter
     private static File debugDirectory;
     @Getter
@@ -83,42 +96,42 @@ public class Main {
     private static String[] startupArgs;
     @Getter
     private static long startupAt = System.currentTimeMillis();
+    private static String userAgent;
+    public static final int PBH_BTN_PROTOCOL_IMPL_VERSION = 10;
+    public static final String PBH_BTN_PROTOCOL_READABLE_VERSION = "0.0.3";
 
     public static void main(String[] args) {
         startupArgs = args;
+        setupReloading();
         setupConfDirectory(args);
+        loadFlagsProperties();
+        setupConfiguration();
         setupLogback();
         meta = buildMeta();
-        setupConfiguration();
-        mainConfigFile = new File(configDirectory, "config.yml");
-        mainConfig = loadConfiguration(mainConfigFile);
-        new PBHConfigUpdater(mainConfigFile, mainConfig, Main.class.getResourceAsStream("/config.yml")).update(new MainConfigUpdateScript(mainConfig));
-        profileConfigFile = new File(configDirectory, "profile.yml");
-        profileConfig = loadConfiguration(profileConfigFile);
-        new PBHConfigUpdater(profileConfigFile, profileConfig, Main.class.getResourceAsStream("/profile.yml")).update(new ProfileUpdateScript(profileConfig));
         String defLocaleTag = Locale.getDefault().getLanguage() + "-" + Locale.getDefault().getCountry();
         log.info("Current system language tag: {}", defLocaleTag);
         DEF_LOCALE = mainConfig.getString("language");
         if (DEF_LOCALE == null || DEF_LOCALE.equalsIgnoreCase("default")) {
-            DEF_LOCALE = System.getenv("PBH_USER_LOCALE");
+            DEF_LOCALE = ExternalSwitch.parse("pbh.userLocale");
             if (DEF_LOCALE == null) {
                 DEF_LOCALE = defLocaleTag;
             }
         }
-        DEF_LOCALE = DEF_LOCALE.toLowerCase(Locale.ROOT).replace("-", "_");
         initGUI(args);
         guiManager.createMainWindow();
+        guiManager.taskbarControl().updateProgress(null, Taskbar.State.INDETERMINATE, 0.0f);
         pbhServerAddress = mainConfig.getString("server.prefix", "http://127.0.0.1:" + mainConfig.getInt("server.http"));
         setupProxySettings();
+        setupScriptEngine();
         try {
             log.info(TextManager.tlUI(Lang.SPRING_CONTEXT_LOADING));
             applicationContext = new AnnotationConfigApplicationContext();
             applicationContext.register(AppConfig.class);
             applicationContext.refresh();
-            registerBean(File.class, mainConfigFile, "mainConfigFile");
-            registerBean(File.class, profileConfigFile, "profileConfigFile");
-            registerBean(YamlConfiguration.class, mainConfig, "mainConfig");
-            registerBean(YamlConfiguration.class, profileConfig, "profileConfig");
+//            registerBean(File.class, mainConfigFile, "mainConfigFile");
+//            registerBean(File.class, profileConfigFile, "profileConfigFile");
+//            registerBean(YamlConfiguration.class, mainConfig, "mainConfig");
+//            registerBean(YamlConfiguration.class, profileConfig, "profileConfig");
             server = applicationContext.getBean(PeerBanHelperServer.class);
             server.start();
         } catch (Exception e) {
@@ -127,8 +140,23 @@ public class Main {
         }
         guiManager.onPBHFullyStarted(server);
         setupShutdownHook();
-        setupReloading();
         guiManager.sync();
+    }
+
+    private static void loadFlagsProperties() {
+        try {
+            var flags = new File(dataDirectory, "flags.properties");
+            if (flags.exists()) {
+                try (var is = Files.newInputStream(flags.toPath())) {
+                    Properties properties = new Properties();
+                    properties.load(is);
+                    System.getProperties().putAll(properties);
+                    log.info("Loaded {} property from data/flags.properties.", properties.size());
+                }
+            }
+        } catch (IOException e) {
+            log.error("Unable to load flags.properties", e);
+        }
     }
 
     @SneakyThrows
@@ -152,7 +180,7 @@ public class Main {
         }
 
         try {
-            var targetLevel = System.getProperty("pbh.log.level");
+            var targetLevel = ExternalSwitch.parse("pbh.log.level");
             if (targetLevel != null) {
                 var rootLogger = LoggerFactory.getLogger(Logger.ROOT_LOGGER_NAME);
                 ch.qos.logback.classic.Logger logbackLogger = (ch.qos.logback.classic.Logger) rootLogger;
@@ -163,8 +191,9 @@ public class Main {
     }
 
     public static ReloadResult reloadModule() {
+        setupConfiguration();
+        loadFlagsProperties();
         setupProxySettings();
-        ;
         return ReloadResult.builder().status(ReloadStatus.SUCCESS).reason("OK!").build();
     }
 
@@ -201,7 +230,7 @@ public class Main {
     private static void setupConfDirectory(String[] args) {
         String osName = System.getProperty("os.name");
         String root = "data";
-        if ("true".equalsIgnoreCase(System.getProperty("pbh.usePlatformConfigLocation"))) {
+        if (ExternalSwitch.parseBoolean("pbh.usePlatformConfigLocation")) {
             if (osName.contains("Windows")) {
                 root = new File(System.getenv("LOCALAPPDATA"), "PeerBanHelper").getAbsolutePath();
             } else {
@@ -214,8 +243,8 @@ public class Main {
                 root = dataDirectory.resolve("PeerBanHelper").toAbsolutePath().toString();
             }
         }
-        if (System.getProperty("pbh.datadir") != null) {
-            root = System.getProperty("pbh.datadir");
+        if (ExternalSwitch.parse("pbh.datadir") != null) {
+            root = ExternalSwitch.parse("pbh.datadir");
         }
 
         dataDirectory = new File(root);
@@ -223,11 +252,11 @@ public class Main {
         configDirectory = new File(dataDirectory, "config");
         pluginDirectory = new File(dataDirectory, "plugins");
         debugDirectory = new File(dataDirectory, "debug");
-        if (System.getProperty("pbh.configdir") != null) {
-            configDirectory = new File(System.getProperty("pbh.configdir"));
+        if (ExternalSwitch.parse("pbh.configdir") != null) {
+            configDirectory = new File(ExternalSwitch.parse("pbh.configdir"));
         }
-        if (System.getProperty("pbh.logsdir") != null) {
-            logsDirectory = new File(System.getProperty("pbh.logsdir"));
+        if (ExternalSwitch.parse("pbh.logsdir") != null) {
+            logsDirectory = new File(ExternalSwitch.parse("pbh.logsdir"));
         }
         // other directories aren't allowed to change by user to keep necessary structure
     }
@@ -241,16 +270,31 @@ public class Main {
             configuration.load(file);
         } catch (IOException | InvalidConfigurationException e) {
             log.error("Unable to load configuration: invalid YAML configuration // 无法加载配置文件：无效的 YAML 配置，请检查是否有语法错误", e);
-            JOptionPane.showMessageDialog(null, "Invalid/Corrupted YAML configuration | 无效或损坏的 YAML 配置文件", String.format("Failed to read configuration: %s", file), JOptionPane.ERROR_MESSAGE);
+            if (!Desktop.isDesktopSupported() || ExternalSwitch.parse("pbh.nogui") != null || Arrays.stream(startupArgs).anyMatch(arg -> arg.equalsIgnoreCase("nogui"))) {
+                try {
+                    log.error("Bad configuration:  {}", Files.readString(file.toPath()));
+                } catch (IOException ex) {
+                    log.error("Unable to output the bad configuration content", ex);
+                }
+                log.error("Unable to load configuration: invalid YAML configuration // 无法加载配置文件：无效的 YAML 配置，请检查是否有语法错误", e);
+            } else {
+                JOptionPane.showMessageDialog(null, "Invalid/Corrupted YAML configuration | 无效或损坏的 YAML 配置文件", String.format("Failed to read configuration: %s", file), JOptionPane.ERROR_MESSAGE);
+            }
             System.exit(1);
         }
         return configuration;
     }
 
-    private static void setupConfiguration() {
+    public static void setupConfiguration() {
         log.info("Loading configuration...");
         try {
             initConfiguration();
+            mainConfigFile = new File(configDirectory, "config.yml");
+            mainConfig = loadConfiguration(mainConfigFile);
+            new PBHConfigUpdater(mainConfigFile, mainConfig, Main.class.getResourceAsStream("/config.yml")).update(new MainConfigUpdateScript(mainConfig));
+            profileConfigFile = new File(configDirectory, "profile.yml");
+            profileConfig = loadConfiguration(profileConfigFile);
+            new PBHConfigUpdater(profileConfigFile, profileConfig, Main.class.getResourceAsStream("/profile.yml")).update(new ProfileUpdateScript(profileConfig));
             //guiManager.showConfigurationSetupDialog();
             //System.exit(0);
         } catch (IOException e) {
@@ -294,7 +338,7 @@ public class Main {
 
     private static void initGUI(String[] args) {
         String guiType = "swing";
-        if (!Desktop.isDesktopSupported() || System.getProperty("pbh.nogui") != null || Arrays.stream(args).anyMatch(arg -> arg.equalsIgnoreCase("nogui"))) {
+        if (!Desktop.isDesktopSupported() || ExternalSwitch.parse("pbh.nogui") != null || Arrays.stream(args).anyMatch(arg -> arg.equalsIgnoreCase("nogui"))) {
             guiType = "console";
         } else if (Arrays.stream(args).anyMatch(arg -> arg.equalsIgnoreCase("swing"))) {
             guiType = "swing";
@@ -307,7 +351,26 @@ public class Main {
     }
 
     public static String getUserAgent() {
-        return "PeerBanHelper/" + meta.getVersion() + " BTN-Protocol/0.0.2";
+        if (userAgent != null) return userAgent;
+        String userAgentTemplate = "PeerBanHelper/%s (%s; %s,%s,%s) BTN-Protocol/%s BTN-Protocol-Version/%s";
+        var osMXBean = ManagementFactory.getOperatingSystemMXBean();
+        String release = ExternalSwitch.parse("pbh.release");
+        if (release == null) {
+            release = "unknown";
+        }
+        String os = osMXBean.getName();
+        String osVersion = osMXBean.getVersion();
+        String buildNumber = "unknown";
+        String codeName = "";
+        try {
+            SystemInfo info = new SystemInfo();
+            var verInfo = info.getOperatingSystem().getVersionInfo();
+            buildNumber = verInfo.getBuildNumber();
+            codeName = verInfo.getCodeName();
+        } catch (Throwable ignored) {
+        }
+        userAgent = String.format(userAgentTemplate, meta.getVersion(), release, os, osVersion, codeName + buildNumber, PBH_BTN_PROTOCOL_READABLE_VERSION, PBH_BTN_PROTOCOL_IMPL_VERSION);
+        return userAgent;
     }
 
     private static void handleCommand(String input) {
@@ -317,13 +380,17 @@ public class Main {
     private static boolean initConfiguration() throws IOException {
         log.info("PeerBanHelper data directory: {}", dataDirectory.getAbsolutePath());
         if (!dataDirectory.exists()) {
-            configDirectory.mkdirs();
+            dataDirectory.mkdirs();
         }
         if (!configDirectory.exists()) {
             configDirectory.mkdirs();
         }
         if (!configDirectory.isDirectory()) {
-            throw new IllegalStateException("The path " + configDirectory.getAbsolutePath() + " should be a directory but found a file.");
+            configDirectory.delete();
+            configDirectory.mkdirs();
+            if (!configDirectory.isDirectory()) {
+                throw new IllegalStateException("The path " + configDirectory.getAbsolutePath() + " should be a directory but found a file, auto fix failed.");
+            }
         }
         if (!pluginDirectory.exists()) {
             pluginDirectory.mkdirs();
@@ -350,7 +417,7 @@ public class Main {
             return name;
         }
         if (name.length() > 1 && Character.isUpperCase(name.charAt(1)) &&
-            Character.isUpperCase(name.charAt(0))) {
+                Character.isUpperCase(name.charAt(0))) {
             return name;
         }
         char chars[] = name.toCharArray();
@@ -398,5 +465,56 @@ public class Main {
         DefaultListableBeanFactory defaultListableBeanFactory = (DefaultListableBeanFactory) configurableApplicationContext.getBeanFactory();
         defaultListableBeanFactory.removeBeanDefinition(beanName);
     }
+
+    private static void setupScriptEngine() {
+        AviatorEvaluator.getInstance().setCachedExpressionByDefault(true);
+        // ASM 性能优先
+        AviatorEvaluator.getInstance().setOption(Options.EVAL_MODE, EvalMode.ASM);
+        // EVAL 性能优先
+        AviatorEvaluator.getInstance().setOption(Options.OPTIMIZE_LEVEL, AviatorEvaluator.EVAL);
+        // 降低浮点计算精度
+        AviatorEvaluator.getInstance().setOption(Options.MATH_CONTEXT, MathContext.DECIMAL32);
+        // 启用变量语法糖
+        AviatorEvaluator.getInstance().setOption(Options.ENABLE_PROPERTY_SYNTAX_SUGAR, true);
+//        // 表达式允许序列化和反序列化
+//        AviatorEvaluator.getInstance().setOption(Options.SERIALIZABLE, true);
+        // 启用反射方法查找
+        AviatorEvaluator.getInstance().setFunctionMissing(JavaMethodReflectionFunctionMissing.getInstance());
+        // 注册反射调用
+        registerFunctions(IPAddressUtil.class);
+        registerFunctions(HTTPUtil.class);
+        registerFunctions(JsonUtil.class);
+        registerFunctions(Lang.class);
+        registerFunctions(StrUtil.class);
+        registerFunctions(PeerBanHelperServer.class);
+        registerFunctions(InfoHashUtil.class);
+        registerFunctions(CommonUtil.class);
+        registerFunctions(ByteUtil.class);
+        registerFunctions(MiscUtil.class);
+        registerFunctions(MsgUtil.class);
+        registerFunctions(SharedObject.class);
+        registerFunctions(UrlEncoderDecoder.class);
+        registerFunctions(URLUtil.class);
+        registerFunctions(WebUtil.class);
+        registerFunctions(RSAUtils.class);
+        registerFunctions(Pageable.class);
+        registerFunctions(TextManager.class);
+        registerFunctions(ExchangeMap.class);
+        registerFunctions(Main.class);
+    }
+
+    private static void registerFunctions(Class<?> clazz) {
+        try {
+            AviatorEvaluator.addInstanceFunctions(StringUtils.uncapitalize(clazz.getSimpleName()), clazz);
+        } catch (IllegalAccessException | NoSuchMethodException e) {
+            log.error("Internal error: failed on register instance functions: {}", clazz.getName(), e);
+        }
+        try {
+            AviatorEvaluator.addStaticFunctions(StringUtils.capitalize(clazz.getSimpleName()), clazz);
+        } catch (IllegalAccessException | NoSuchMethodException e) {
+            log.error("Internal error: failed on register static functions: {}", clazz.getName(), e);
+        }
+    }
+
 
 }

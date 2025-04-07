@@ -5,12 +5,9 @@ import com.ghostchu.peerbanhelper.scriptengine.ScriptEngine;
 import com.ghostchu.peerbanhelper.text.Lang;
 import com.ghostchu.peerbanhelper.text.TranslationComponent;
 import com.ghostchu.peerbanhelper.util.IPAddressUtil;
-import com.ghostchu.peerbanhelper.util.rule.AbstractMatcher;
-import com.ghostchu.peerbanhelper.util.rule.MatchResult;
-import com.ghostchu.peerbanhelper.util.rule.Rule;
-import com.ghostchu.peerbanhelper.util.rule.RuleParser;
+import com.ghostchu.peerbanhelper.util.rule.*;
 import com.ghostchu.peerbanhelper.util.rule.matcher.IPMatcher;
-import inet.ipaddr.IPAddress;
+import inet.ipaddr.format.util.DualIPv4v6AssociativeTries;
 import lombok.Data;
 import lombok.extern.slf4j.Slf4j;
 import org.jetbrains.annotations.NotNull;
@@ -24,7 +21,7 @@ import static com.ghostchu.peerbanhelper.text.TextManager.tlUI;
 
 @Data
 @Slf4j
-public class BtnRuleParsed {
+public final class BtnRuleParsed {
     private final ScriptEngine scriptEngine;
     private String version;
     private Map<String, List<Rule>> peerIdRules;
@@ -70,7 +67,7 @@ public class BtnRuleParsed {
                     @Override
                     public @NotNull MatchResult match0(@NotNull String content) {
                         boolean hit = Integer.parseInt(content) == s;
-                        return hit ? MatchResult.TRUE : MatchResult.DEFAULT;
+                        return hit ? new MatchResult(MatchResultEnum.TRUE, new TranslationComponent(Lang.MATCH_CONDITION_PORT_MATCH)) : new MatchResult(MatchResultEnum.DEFAULT, new TranslationComponent("Port seems OK"));
                     }
 
                     @Override
@@ -94,10 +91,13 @@ public class BtnRuleParsed {
         return rules;
     }
 
-
     public Map<String, IPMatcher> parseIPRule(Map<String, List<String>> raw) {
         Map<String, IPMatcher> rules = new HashMap<>();
-        raw.forEach((k, v) -> rules.put(k,new IPMatcher(version, k, v.stream().map(IPAddressUtil::getIPAddress).toList())));
+        raw.forEach((k, v) -> {
+            DualIPv4v6AssociativeTries<String> tries = new DualIPv4v6AssociativeTries<>();
+            v.stream().map(IPAddressUtil::getIPAddress).forEach(tries::add);
+            rules.put(k,new IPMatcher(version, k, List.of(tries)));
+        });
         return rules;
     }
 
@@ -116,23 +116,23 @@ public class BtnRuleParsed {
                 scriptRules.size();
     }
 
-    public static class BtnRuleIpMatcher extends IPMatcher {
-
-        private final String version;
-
-        public BtnRuleIpMatcher(String version, String ruleId, String ruleName, List<IPAddress> ruleData) {
-            super(ruleId, ruleName, ruleData);
-            this.version = version;
-        }
-
-        @Override
-        public @NotNull TranslationComponent matcherName() {
-            return new TranslationComponent(Lang.BTN_IP_RULE, version);
-        }
-
-        @Override
-        public String matcherIdentifier() {
-            return "btn-exception:ip";
-        }
-    }
+//    public static class BtnRuleIpMatcher extends IPMatcher {
+//
+//        private final String version;
+//
+//        public BtnRuleIpMatcher(String version, String ruleId, String ruleName, List<DualIPv4v6Tries> ruleData) {
+//            super(ruleId, ruleName, ruleData);
+//            this.version = version;
+//        }
+//
+//        @Override
+//        public @NotNull TranslationComponent matcherName() {
+//            return new TranslationComponent(Lang.BTN_IP_RULE, version);
+//        }
+//
+//        @Override
+//        public String matcherIdentifier() {
+//            return "btn-exception:ip";
+//        }
+//    }
 }

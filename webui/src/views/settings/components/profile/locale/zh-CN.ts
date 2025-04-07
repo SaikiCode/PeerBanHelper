@@ -40,7 +40,7 @@ export default {
   'page.settings.tab.profile.module.clientNameBlackList': '客户端名称封禁',
   'page.settings.tab.profile.module.clientNameBlackList.useGlobalBanTime': '使用全局封禁时间',
   'page.settings.tab.profile.module.clientNameBlackList.banClientName': '封禁客户端名称',
-  'page.settings.tab.profile.module.clientNameBlackList.rule': '规则',
+  'page.settings.tab.profile.module.clientNameBlackList.placeholder': '客户端名称',
 
   'page.settings.tab.profile.module.progressCheatBlocker': '进度作弊检查',
   'page.settings.tab.profile.module.progressCheatBlocker.tips':
@@ -65,7 +65,7 @@ export default {
   'page.settings.tab.profile.module.progressCheatBlocker.ipv6prefixlength': 'IPv6 前缀长度',
   'page.settings.tab.profile.module.progressCheatBlocker.ipprefixLength.tips':
     '来自同一子网的 IP 视为同一用户',
-  'page.settings.tab.profile.module.progressCheatBlocker.banDuration': '封禁持续时间',
+  'page.settings.tab.profile.module.progressCheatBlocker.useGlobalBanTime': '使用全局封禁时间',
   'page.settings.tab.profile.module.progressCheatBlocker.enablePersist': '启用持久化记录',
   'page.settings.tab.profile.module.progressCheatBlocker.enablePersist.tips':
     '启用此功能可能增加磁盘 I/O 并可能影响性能，嵌入式设备上甚至可能带来闪存磨损',
@@ -124,5 +124,13 @@ export default {
   'page.settings.tab.profile.module.activeMonitor.trafficMonitoring.daily.enable': '开启流量告警',
   'page.settings.tab.profile.module.activeMonitor.trafficMonitoring.daily.tips':
     '设置流量告警阈值，当超出阈值后将发送告警信息提醒您检查下载器状态',
-  'page.settings.tab.profile.module.activeMonitor.trafficMonitoring.daily.value': '每日流量告警阈值'
+  'page.settings.tab.profile.module.activeMonitor.trafficMonitoring.daily.value':
+    '每日流量告警阈值',
+
+  'page.settings.tab.profile.module.ptrBlackList.title': 'DNS 反向解析封禁',
+  'page.settings.tab.profile.module.ptrBlackList.useGlobalBanTime': '使用全局封禁时间',
+  'page.settings.tab.profile.module.ptrBlackList.reserveName': '封禁域名',
+  'page.settings.tab.profile.module.ptrBlackList.placeholder': '反向解析域名',
+  'page.settings.tab.profile.module.ptrBlackList.tooltip':
+    '此模块将强制对 Peer IP 进行 PTR 查询，并试图解析其 IP 地址绑定的主机名。如果 IP 地址绑定了一个主机名且主机名匹配下列规则，则执行操作'
 }

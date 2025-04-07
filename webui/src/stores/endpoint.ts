@@ -1,20 +1,21 @@
-import { defineStore } from 'pinia'
-import { useStorage } from '@vueuse/core'
+import type { donateStatus, GlobalConfig, mainfest, release } from '@/api/model/manifest'
+import { basePath } from '@/router'
+import { IncorrectTokenError, login, NeedInitError } from '@/service/login'
 import {
+  GetGlobalConfig,
   getLatestVersion,
   getManifest,
+  GetManifestError,
   getPBHPlusStatus,
   setPHBPlusKey,
-  GetManifestError
+  UpdateGlobalConfig
 } from '@/service/version'
-import { computed, readonly, ref, type DeepReadonly } from 'vue'
-import type { donateStatus, release } from '@/api/model/manifest'
-import { IncorrectTokenError, login, NeedInitError } from '@/service/login'
-import { compare } from 'compare-versions'
-import type { mainfest } from '@/api/model/manifest'
-import { basePath } from '@/router'
-import mitt from 'mitt'
 import networkFailRetryNotication from '@/utils/networkRetry'
+import { useStorage } from '@vueuse/core'
+import { compare } from 'compare-versions'
+import mitt from 'mitt'
+import { defineStore } from 'pinia'
+import { computed, readonly, ref, type DeepReadonly } from 'vue'
 
 function newPromiseLock<T>() {
   let resolve!: (value: T | PromiseLike<T>) => void
@@ -135,7 +136,8 @@ export const useEndpointStore = defineStore('endpoint', () => {
       const latestRelease = await getLatestVersion()
       latestVersion.value = {
         tagName: latestRelease.tag_name,
-        url: latestRelease.html_url
+        url: latestRelease.html_url,
+        changeLog: latestRelease.body ?? ''
       }
     } catch (err) {
       checkUpgradeError.value = err as Error
@@ -147,9 +149,6 @@ export const useEndpointStore = defineStore('endpoint', () => {
   const getPlusStatus = async () => {
     const result = await getPBHPlusStatus()
     plusStatus.value = result.data
-    if (result.data.activated) {
-      console.log('PBH Plus Activated! Thanks for your support ❤️')
-    }
   }
   const setPlusKey = async (key: string) => {
     const result = await setPHBPlusKey(key)
@@ -159,11 +158,29 @@ export const useEndpointStore = defineStore('endpoint', () => {
       throw new Error(result.message)
     }
   }
+  const globalConfig = ref<GlobalConfig>()
+  const getGlobalConfig = async () => {
+    const result = await GetGlobalConfig()
+    if (result.success) {
+      globalConfig.value = result.data
+    } else {
+      throw new Error(result.message)
+    }
+  }
+  const updateGlobalConfig = async (config: GlobalConfig) => {
+    const result = await UpdateGlobalConfig(config)
+    if (result.success) {
+      getGlobalConfig()
+    } else {
+      throw new Error(result.message)
+    }
+  }
   // init
   setEndpoint(endpoint.value, { retryOnNetWorkFail: true })
 
   setTimeout(async () => getPlusStatus())
   setTimeout(async () => setAccessToken(accessToken.value), 3000)
+  setTimeout(async () => getGlobalConfig())
   return {
     endpointSaved: readonly(endpoint),
     endpoint: computed(() => {
@@ -185,6 +202,7 @@ export const useEndpointStore = defineStore('endpoint', () => {
     setAuthToken,
     plusStatus,
     setPlusKey,
+    getPlusStatus,
     emitter: emitter,
     assertResponseLogin: (res: Response) => {
       if (res.status === 403) {
@@ -192,7 +210,12 @@ export const useEndpointStore = defineStore('endpoint', () => {
         throw new IncorrectTokenError()
       } else if (res.status === 303) {
         throw new NeedInitError()
+      } else if (res.status === 401) {
+        throw new IncorrectTokenError()
       }
-    }
+    },
+    getGlobalConfig,
+    updateGlobalConfig,
+    globalConfig: readonly(globalConfig)
   }
 })

@@ -1,16 +1,16 @@
 package com.ghostchu.peerbanhelper.ipdb;
 
 import com.ghostchu.peerbanhelper.Main;
+import com.ghostchu.peerbanhelper.gui.impl.console.ConsoleProgressDialog;
 import com.ghostchu.peerbanhelper.text.Lang;
 import com.ghostchu.peerbanhelper.text.TranslationComponent;
 import com.ghostchu.peerbanhelper.util.HTTPUtil;
 import com.github.mizosoft.methanol.Methanol;
 import com.github.mizosoft.methanol.MutableRequest;
+import com.github.mizosoft.methanol.ProgressTracker;
 import com.google.common.cache.Cache;
 import com.google.common.cache.CacheBuilder;
-import com.maxmind.db.MaxMindDbConstructor;
-import com.maxmind.db.MaxMindDbParameter;
-import com.maxmind.db.Reader;
+import com.maxmind.db.*;
 import com.maxmind.geoip2.DatabaseReader;
 import com.maxmind.geoip2.model.AsnResponse;
 import com.maxmind.geoip2.model.CityResponse;
@@ -19,6 +19,7 @@ import com.maxmind.geoip2.record.City;
 import com.maxmind.geoip2.record.Country;
 import com.maxmind.geoip2.record.Location;
 import lombok.Getter;
+import lombok.SneakyThrows;
 import lombok.ToString;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.compress.compressors.xz.XZCompressorInputStream;
@@ -40,9 +41,9 @@ import java.time.Duration;
 import java.time.temporal.ChronoUnit;
 import java.util.Arrays;
 import java.util.List;
+import java.util.Locale;
 import java.util.Objects;
 import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
@@ -50,11 +51,7 @@ import java.util.stream.Collectors;
 import static com.ghostchu.peerbanhelper.text.TextManager.tlUI;
 
 @Slf4j
-public class IPDB implements AutoCloseable {
-    private final Cache<InetAddress, IPGeoData> MINI_CACHE = CacheBuilder.newBuilder()
-            .maximumSize(1000)
-            .expireAfterAccess(5, TimeUnit.SECONDS)
-            .build();
+public final class IPDB implements AutoCloseable {
     private final File dataFolder;
     private final long updateInterval = 3888000000L; // 45天
     private final String accountId;
@@ -65,7 +62,7 @@ public class IPDB implements AutoCloseable {
     private final boolean autoUpdate;
     private final String userAgent;
     private final File mmdbGeoCNFile;
-    private Methanol httpClient;
+    private final Methanol httpClient;
     @Getter
     private DatabaseReader mmdbCity;
     @Getter
@@ -84,7 +81,22 @@ public class IPDB implements AutoCloseable {
         this.mmdbGeoCNFile = new File(directory, "GeoCN.mmdb");
         this.autoUpdate = autoUpdate;
         this.userAgent = userAgent;
-        setupHttpClient();
+        this.httpClient = Methanol
+                .newBuilder()
+                .version(HttpClient.Version.HTTP_1_1)
+                .followRedirects(HttpClient.Redirect.ALWAYS)
+                .userAgent(userAgent)
+                .requestTimeout(Duration.of(2, ChronoUnit.MINUTES))
+                .connectTimeout(Duration.of(15, ChronoUnit.SECONDS))
+                .headersTimeout(Duration.of(15, ChronoUnit.SECONDS))
+                .readTimeout(Duration.of(30, ChronoUnit.SECONDS), Executors.newScheduledThreadPool(1, Thread.ofVirtual().factory()))
+                .authenticator(new Authenticator() {
+                    @Override
+                    public PasswordAuthentication requestPasswordAuthenticationInstance(String host, InetAddress addr, int port, String protocol, String prompt, String scheme, URL url, RequestorType reqType) {
+                        return new PasswordAuthentication(accountId, licenseKey.toCharArray());
+                    }
+                })
+                .build();
         if (needUpdateMMDB(mmdbCityFile)) {
             updateMMDB(databaseCity, mmdbCityFile);
         }
@@ -98,25 +110,19 @@ public class IPDB implements AutoCloseable {
     }
 
     public IPGeoData query(InetAddress address) {
-        try {
-            return MINI_CACHE.get(address, () -> {
-                IPGeoData geoData = new IPGeoData();
-                geoData.setAs(queryAS(address));
-                geoData.setCountry(queryCountry(address));
-                geoData.setCity(queryCity(address));
-                geoData.setNetwork(queryNetwork(address));
-                if (geoData.getCountry() != null && geoData.getCountry().getIso() != null) {
-                    String iso = geoData.getCountry().getIso();
-                    if (iso.equalsIgnoreCase("CN") || iso.equalsIgnoreCase("TW")
-                            || iso.equalsIgnoreCase("HK") || iso.equalsIgnoreCase("MO")) {
-                        queryGeoCN(address, geoData);
-                    }
-                }
-                return geoData;
-            });
-        } catch (ExecutionException e) {
-            return new IPGeoData();
+        IPGeoData geoData = new IPGeoData();
+        geoData.setAs(queryAS(address));
+        geoData.setCountry(queryCountry(address));
+        geoData.setCity(queryCity(address));
+        geoData.setNetwork(queryNetwork(address));
+        if (geoData.getCountry() != null && geoData.getCountry().getIso() != null) {
+            String iso = geoData.getCountry().getIso();
+            if (iso.equalsIgnoreCase("CN") || iso.equalsIgnoreCase("TW")
+                    || iso.equalsIgnoreCase("HK") || iso.equalsIgnoreCase("MO")) {
+                queryGeoCN(address, geoData);
+            }
         }
+        return geoData;
 
     }
 
@@ -216,7 +222,11 @@ public class IPDB implements AutoCloseable {
             countryData.setIso(country.getIsoCode());
             String countryRegionName = country.getName();
             // 对 TW,HK,MO 后处理，偷个懒
-            if (languageTag.getFirst().equals("zh-CN") && (country.getIsoCode().equals("TW") || country.getIsoCode().equals("HK") || country.getIsoCode().equalsIgnoreCase("MO"))) {
+            var code = languageTag.getFirst();
+            code = code.toLowerCase(Locale.ROOT).replace("-", "_");
+            // 台湾、香港、澳门地区有一个独立 ISO 代码，需要手动处理一下保证符合所在地法律法规
+            // 这坨代码已经改成一坨了，有时间得写个好点的 :(
+            if ((code.equals("zh_cn") || code.equals("zh_hk") || code.equals("zh_mo")) && (country.getIsoCode().equals("TW") || country.getIsoCode().equals("HK") || country.getIsoCode().equalsIgnoreCase("MO"))) {
                 countryRegionName = "中国" + countryRegionName;
             }
             countryData.setName(countryRegionName);
@@ -262,15 +272,21 @@ public class IPDB implements AutoCloseable {
     private void loadMMDB() throws IOException {
         this.languageTag = List.of(Main.DEF_LOCALE, "en");
         this.mmdbCity = new DatabaseReader.Builder(mmdbCityFile)
-                .locales(List.of(Main.DEF_LOCALE, "en")).build();
+                .locales(List.of(Main.DEF_LOCALE, "en"))
+                .fileMode(Reader.FileMode.MEMORY_MAPPED)
+                .withCache(new MaxMindNodeCache())
+                .build();
         this.mmdbASN = new DatabaseReader.Builder(mmdbASNFile)
-                .locales(List.of(Main.DEF_LOCALE, "en")).build();
-        this.geoCN = new Reader(mmdbGeoCNFile);
+                .locales(List.of(Main.DEF_LOCALE, "en"))
+                .fileMode(Reader.FileMode.MEMORY_MAPPED)
+                .withCache(new MaxMindNodeCache())
+                .build();
+        this.geoCN = new Reader(mmdbGeoCNFile, Reader.FileMode.MEMORY_MAPPED, new MaxMindNodeCache());
     }
 
     private void updateMMDB(String databaseName, File target) throws IOException {
         log.info(tlUI(Lang.IPDB_UPDATING, databaseName));
-        IPDBDownloadSource mirror1 = new IPDBDownloadSource("https://github.com/P3TERX/GeoLite.mmdb/releases/latest/download/", databaseName);
+        IPDBDownloadSource mirror1 = new IPDBDownloadSource("https://github.com/PBH-BTN/GeoLite.mmdb/releases/latest/download/", databaseName, true);
         //IPDBDownloadSource mirror2 = new IPDBDownloadSource("https://ghp.ci/https://github.com/P3TERX/GeoLite.mmdb/releases/latest/download/", databaseName);
         IPDBDownloadSource mirror3 = new IPDBDownloadSource("https://pbh-static.paulzzh.com/ipdb/", databaseName, true);
         IPDBDownloadSource mirror4 = new IPDBDownloadSource("https://pbh-static.ghostchu.com/ipdb/", databaseName, true);
@@ -286,24 +302,6 @@ public class IPDB implements AutoCloseable {
         Files.move(tmp, target.toPath(), StandardCopyOption.REPLACE_EXISTING);
     }
 
-    private void setupHttpClient() {
-        this.httpClient = Methanol
-                .newBuilder()
-                .version(HttpClient.Version.HTTP_1_1)
-                .followRedirects(HttpClient.Redirect.ALWAYS)
-                .userAgent(userAgent)
-                .requestTimeout(Duration.of(2, ChronoUnit.MINUTES))
-                .connectTimeout(Duration.of(15, ChronoUnit.SECONDS))
-                .headersTimeout(Duration.of(15, ChronoUnit.SECONDS))
-                .readTimeout(Duration.of(30, ChronoUnit.SECONDS), Executors.newScheduledThreadPool(1, Thread.ofVirtual().factory()))
-                .authenticator(new Authenticator() {
-                    @Override
-                    public PasswordAuthentication requestPasswordAuthenticationInstance(String host, InetAddress addr, int port, String protocol, String prompt, String scheme, URL url, RequestorType reqType) {
-                        return new PasswordAuthentication(accountId, licenseKey.toCharArray());
-                    }
-                })
-                .build();
-    }
 
     private boolean isMmdbNeverDownloaded(File target) {
         return !target.exists();
@@ -325,7 +323,25 @@ public class IPDB implements AutoCloseable {
 
     private CompletableFuture<Void> downloadFile(List<IPDBDownloadSource> mirrorList, Path path, String databaseName) {
         IPDBDownloadSource mirror = mirrorList.removeFirst();
-        return HTTPUtil.retryableSendProgressTracking(httpClient, MutableRequest.GET(mirror.getIPDBUrl()), HttpResponse.BodyHandlers.ofFile(path))
+        ProgressTracker tracker = ProgressTracker.newBuilder()
+                .bytesTransferredThreshold(16 * 1024) // 16 kB
+                .timePassedThreshold(Duration.of(1, ChronoUnit.SECONDS))
+                .build();
+        var progressDialog = Main.getGuiManager().createProgressDialog(tlUI(Lang.IPDB_DOWNLOAD_TITLE, databaseName), tlUI(Lang.IPDB_DOWNLOAD_DESCRIPTION, databaseName), tlUI(Lang.GUI_COMMON_CANCEL), null, false);
+        progressDialog.show();
+        progressDialog.setComment(mirror.getIPDBUrl());
+        var bodyHandler = tracker.tracking(HttpResponse.BodyHandlers.ofFile(path), item -> {
+            if (!(progressDialog instanceof ConsoleProgressDialog)) {
+                HTTPUtil.onProgress(item);
+            }
+            progressDialog.setProgressDisplayIndeterminate(!item.determinate());
+            if (item.determinate()) {
+                progressDialog.updateProgress((float) item.totalBytesTransferred() / item.contentLength());
+            } else {
+                progressDialog.updateProgress(0);
+            }
+        });
+        return HTTPUtil.retryableSend(httpClient, MutableRequest.GET(mirror.getIPDBUrl()), bodyHandler)
                 .thenAccept(r -> {
                     if (r.statusCode() == 200) {
                         if (mirror.supportXzip()) {
@@ -370,7 +386,7 @@ public class IPDB implements AutoCloseable {
                         file.delete(); // 删除下载不完整的文件
                     }
                     return null;
-                });
+                }).whenComplete((r, e) -> progressDialog.close());
     }
 
     @Override
@@ -429,6 +445,19 @@ public class IPDB implements AutoCloseable {
             this.cityCode = Long.parseLong(cityCode.toString());
             this.districts = districts;
             this.districtsCode = Long.parseLong(districtsCode.toString());
+        }
+    }
+
+    public static final class MaxMindNodeCache implements NodeCache {
+        private final static Cache<CacheKey, DecodedValue> cache = CacheBuilder.newBuilder()
+                .maximumSize(2000)
+                .expireAfterAccess(1, TimeUnit.HOURS)
+                .build();
+
+        @SneakyThrows
+        @Override
+        public DecodedValue get(CacheKey cacheKey, Loader loader) throws IOException {
+            return cache.get(cacheKey, () -> loader.load(cacheKey));
         }
     }
 

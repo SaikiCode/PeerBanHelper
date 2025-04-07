@@ -11,7 +11,7 @@ import java.util.Objects;
 
 @NoArgsConstructor
 @Data
-public class QBittorrentEEConfigImpl implements QBittorrentConfig {
+public final class QBittorrentEEConfigImpl implements QBittorrentConfig {
     private String type;
     private String endpoint;
     private String username;
@@ -22,6 +22,7 @@ public class QBittorrentEEConfigImpl implements QBittorrentConfig {
     private boolean verifySsl;
     private boolean useShadowBan;
     private boolean ignorePrivate;
+    private boolean paused;
 
     public static QBittorrentEEConfigImpl readFromYaml(ConfigurationSection section) {
         QBittorrentEEConfigImpl config = new QBittorrentEEConfigImpl();
@@ -41,6 +42,7 @@ public class QBittorrentEEConfigImpl implements QBittorrentConfig {
         config.setUseShadowBan(section.getBoolean("use-shadow-ban", false));
         config.setVerifySsl(section.getBoolean("verify-ssl", true));
         config.setIgnorePrivate(section.getBoolean("ignore-private", false));
+        config.setPaused(section.getBoolean("paused", false));
         return config;
     }
 
@@ -58,6 +60,7 @@ public class QBittorrentEEConfigImpl implements QBittorrentConfig {
         section.set("use-shadow-ban", useShadowBan);
         section.set("verify-ssl", verifySsl);
         section.set("ignore-private", ignorePrivate);
+        section.set("paused", paused);
         return section;
     }
 }

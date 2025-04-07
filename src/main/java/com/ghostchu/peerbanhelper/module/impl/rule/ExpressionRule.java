@@ -1,5 +1,6 @@
 package com.ghostchu.peerbanhelper.module.impl.rule;
 
+import com.ghostchu.peerbanhelper.ExternalSwitch;
 import com.ghostchu.peerbanhelper.Main;
 import com.ghostchu.peerbanhelper.database.dao.impl.ScriptStorageDao;
 import com.ghostchu.peerbanhelper.downloader.Downloader;
@@ -52,7 +53,7 @@ import static com.ghostchu.peerbanhelper.text.TextManager.tlUI;
 @Slf4j
 @Component
 @IgnoreScan
-public class ExpressionRule extends AbstractRuleFeatureModule implements Reloadable {
+public final class ExpressionRule extends AbstractRuleFeatureModule implements Reloadable {
     private final static String VERSION = "2";
     private final long maxScriptExecuteTime = 1500;
     private final JavalinWebContainer javalinWebContainer;
@@ -79,9 +80,18 @@ public class ExpressionRule extends AbstractRuleFeatureModule implements Reloada
         }
         javalinWebContainer.javalin()
                 .get("/api/" + getConfigName() + "/scripts", this::listScripts, Role.USER_READ)
+                .get("/api/"+getConfigName()+"/editable", this::editable, Role.USER_READ)
                 .get("/api/" + getConfigName() + "/{scriptId}", this::readScript, Role.USER_READ)
                 .put("/api/" + getConfigName() + "/{scriptId}", this::writeScript, Role.USER_WRITE)
                 .delete("/api/" + getConfigName() + "/{scriptId}", this::deleteScript, Role.USER_WRITE);
+    }
+
+    private void editable(Context context) {
+        Map<String, Object> map = new HashMap<>();
+        var editable = isSafeNetworkEnvironment(context);
+        map.put("editable", editable);
+        map.put("reason", editable ? null : tl(locale(context), Lang.EXPRESS_RULE_ENGINE_DISALLOW_UNSAFE_SOURCE_ACCESS, context.ip()));
+        context.json(new StdResp(true, null, map));
     }
 
     private void deleteScript(Context context) throws IOException {
@@ -157,7 +167,7 @@ public class ExpressionRule extends AbstractRuleFeatureModule implements Reloada
     }
 
     private boolean isSafeNetworkEnvironment(Context context){
-        var value = System.getProperty("pbh.please-disable-safe-network-environment-check-i-know-this-is-very-dangerous-and-i-may-lose-my-data-and-hacker-may-attack-me-via-this-endpoint-and-steal-my-data-or-destroy-my-computer-i-am-fully-responsible-for-this-action-and-i-will-not-blame-the-developer-for-any-loss");
+        var value = ExternalSwitch.parse("pbh.please-disable-safe-network-environment-check-i-know-this-is-very-dangerous-and-i-may-lose-my-data-and-hacker-may-attack-me-via-this-endpoint-and-steal-my-data-or-destroy-my-computer-i-am-fully-responsible-for-this-action-and-i-will-not-blame-the-developer-for-any-loss");
         if(value != null && value.equals("true")){
             return true;
         }

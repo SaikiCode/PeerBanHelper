@@ -3,12 +3,9 @@ package com.ghostchu.peerbanhelper.btn;
 import com.ghostchu.peerbanhelper.text.Lang;
 import com.ghostchu.peerbanhelper.text.TranslationComponent;
 import com.ghostchu.peerbanhelper.util.IPAddressUtil;
-import com.ghostchu.peerbanhelper.util.rule.AbstractMatcher;
-import com.ghostchu.peerbanhelper.util.rule.MatchResult;
-import com.ghostchu.peerbanhelper.util.rule.Rule;
-import com.ghostchu.peerbanhelper.util.rule.RuleParser;
+import com.ghostchu.peerbanhelper.util.rule.*;
 import com.ghostchu.peerbanhelper.util.rule.matcher.IPMatcher;
-import inet.ipaddr.IPAddress;
+import inet.ipaddr.format.util.DualIPv4v6AssociativeTries;
 import lombok.Data;
 import org.jetbrains.annotations.NotNull;
 
@@ -18,7 +15,7 @@ import java.util.List;
 import java.util.Map;
 
 @Data
-public class BtnExceptionRuleParsed {
+public final class BtnExceptionRuleParsed {
     private String version;
     private Map<String, List<Rule>> peerIdRules;
     private Map<String, List<Rule>> clientNameRules;
@@ -42,7 +39,7 @@ public class BtnExceptionRuleParsed {
                     @Override
                     public @NotNull MatchResult match0(@NotNull String content) {
                         boolean hit = Integer.parseInt(content) == s;
-                        return hit ? MatchResult.TRUE : MatchResult.DEFAULT;
+                        return hit ? new MatchResult(MatchResultEnum.TRUE, new TranslationComponent(Lang.MATCH_CONDITION_PORT_MATCH)) : new MatchResult(MatchResultEnum.DEFAULT, new TranslationComponent("Port seems OK"));
                     }
 
                     @Override
@@ -68,7 +65,11 @@ public class BtnExceptionRuleParsed {
 
     public Map<String, List<Rule>> parseIPRule(Map<String, List<String>> raw) {
         Map<String, List<Rule>> rules = new HashMap<>();
-        raw.forEach((k, v) -> rules.put(k, List.of(new BtnRuleIpMatcher(version, k, k, v.stream().map(IPAddressUtil::getIPAddress).toList()))));
+        raw.forEach((k, v) -> {
+            DualIPv4v6AssociativeTries<String> tries = new DualIPv4v6AssociativeTries<>();
+            v.stream().map(IPAddressUtil::getIPAddress).forEach(tries::add);
+            rules.put(k, List.of(new BtnRuleIpMatcher(version, k, k, List.of(tries))));
+        });
         return rules;
     }
 
@@ -82,7 +83,7 @@ public class BtnExceptionRuleParsed {
 
         private final String version;
 
-        public BtnRuleIpMatcher(String version, String ruleId, String ruleName, List<IPAddress> ruleData) {
+        public BtnRuleIpMatcher(String version, String ruleId, String ruleName, List<DualIPv4v6AssociativeTries<String>> ruleData) {
             super(ruleId, ruleName, ruleData);
             this.version = version;
         }

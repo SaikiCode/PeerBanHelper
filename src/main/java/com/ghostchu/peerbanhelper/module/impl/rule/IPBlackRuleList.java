@@ -20,6 +20,7 @@ import com.ghostchu.peerbanhelper.util.context.IgnoreScan;
 import com.ghostchu.peerbanhelper.util.paging.Page;
 import com.ghostchu.peerbanhelper.util.paging.Pageable;
 import com.ghostchu.peerbanhelper.util.rule.MatchResult;
+import com.ghostchu.peerbanhelper.util.rule.MatchResultEnum;
 import com.ghostchu.peerbanhelper.util.rule.ModuleMatchCache;
 import com.ghostchu.peerbanhelper.util.rule.matcher.IPMatcher;
 import com.ghostchu.peerbanhelper.web.wrapper.StdResp;
@@ -31,21 +32,27 @@ import com.google.common.hash.Hashing;
 import com.google.common.io.Files;
 import com.j256.ormlite.stmt.SelectArg;
 import inet.ipaddr.IPAddress;
+import inet.ipaddr.format.util.DualIPv4v6AssociativeTries;
 import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.commons.lang3.tuple.Pair;
 import org.bspfsystems.yamlconfiguration.configuration.ConfigurationSection;
 import org.jetbrains.annotations.NotNull;
+import org.jetbrains.annotations.Nullable;
 import org.springframework.stereotype.Component;
 
 import java.io.File;
 import java.io.IOException;
+import java.net.URI;
+import java.net.URISyntaxException;
 import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
-import java.nio.file.Path;
 import java.sql.SQLException;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
+import java.util.StringJoiner;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -62,7 +69,7 @@ import static com.ghostchu.peerbanhelper.text.TextManager.tlUI;
 @Component
 @Getter
 @IgnoreScan
-public class IPBlackRuleList extends AbstractRuleFeatureModule implements Reloadable {
+public final class IPBlackRuleList extends AbstractRuleFeatureModule implements Reloadable {
     private final RuleSubLogsDao ruleSubLogsDao;
     private final ModuleMatchCache moduleMatchCache;
     private List<IPMatcher> ipBanMatchers;
@@ -112,29 +119,32 @@ public class IPBlackRuleList extends AbstractRuleFeatureModule implements Reload
 
     @Override
     public @NotNull CheckResult shouldBanPeer(@NotNull Torrent torrent, @NotNull Peer peer, @NotNull Downloader downloader, @NotNull ExecutorService ruleExecuteExecutor) {
+        if (isHandShaking(peer)) {
+            return handshaking();
+        }
         return getCache().readCacheButWritePassOnly(this, peer.getPeerAddress().getIp(), () -> {
-            long t1 = System.currentTimeMillis();
             String ip = peer.getPeerAddress().getIp();
             List<IPBanResult> results = new ArrayList<>();
-            ipBanMatchers.forEach(rule-> results.add(new IPBanResult(rule.getRuleName(), rule.match(ip))));
-            AtomicReference<IPBanResult> matchRule = new AtomicReference<>();
-            boolean mr = results.stream().anyMatch(ipBanResult -> {
+            ipBanMatchers.forEach(rule -> results.add(new IPBanResult(rule.getRuleName(), rule.match(ip))));
+            for (IPBanResult ipBanResult : results) {
                 try {
-                    if (ipBanResult == null) return false;
-                    boolean match = ipBanResult.matchResult() == MatchResult.TRUE;
+                    if (ipBanResult == null) return pass();
+                    boolean match = ipBanResult.matchResult().result() == MatchResultEnum.TRUE;
                     if (match) {
-                        matchRule.set(ipBanResult);
+                        return new CheckResult(getClass(),
+                                PeerAction.BAN,
+                                banDuration,
+                                new TranslationComponent(ipBanResult.ruleName()),
+                                new TranslationComponent(Lang.MODULE_IBL_MATCH_IP_RULE,
+                                        ipBanResult.ruleName(),
+                                        ip,
+                                        Optional.ofNullable(ipBanResult.matchResult().comment()).orElse(new TranslationComponent(Lang.MODULE_IBL_COMMENT_UNKNOWN))
+                                ));
                     }
-                    return match;
                 } catch (Exception e) {
                     log.error(tlUI(Lang.IP_BAN_RULE_MATCH_ERROR), e);
-                    return false;
+                    return pass();
                 }
-            });
-            long t2 = System.currentTimeMillis();
-            log.debug(tlUI(Lang.IP_BAN_RULE_MATCH_TIME, t2 - t1));
-            if (mr) {
-                return new CheckResult(getClass(), PeerAction.BAN, banDuration, new TranslationComponent(matchRule.get().ruleName()), new TranslationComponent(Lang.MODULE_IBL_MATCH_IP_RULE, matchRule.get().ruleName(), ip));
             }
             return pass();
         }, true);
@@ -188,96 +198,111 @@ public class IPBlackRuleList extends AbstractRuleFeatureModule implements Reload
             return new StdResp(false, tl(locale, Lang.IP_BAN_RULE_DISABLED, ruleId), null);
         }
         String url = rule.getString("url");
-        if (null != url && url.startsWith("http")) {
+        if (null != url) {
             // 解析远程订阅
             String ruleFileName = ruleId + ".txt";
             File dir = new File(Main.getDataDirectory(), "/sub");
             dir.mkdirs();
-            File tempFile = new File(dir, "temp_" + ruleFileName);
             File ruleFile = new File(dir, ruleFileName);
-            List<IPAddress> ipAddresses = new ArrayList<>();
-            HTTPUtil.retryableSend(HTTPUtil.getHttpClient(false, null), MutableRequest.GET(url), HttpResponse.BodyHandlers.ofFile(Path.of(tempFile.getPath()))).whenComplete((pathHttpResponse, throwable) -> {
-                if (throwable != null) {
-                    tempFile.delete();
-                    // 加载远程订阅文件出错,尝试从本地缓存中加载
-                    if (ruleFile.exists()) {
-                        // 如果一致，但ipBanMatchers没有对应的规则内容，则加载内容
-                        if (ipBanMatchers.stream().noneMatch(ele -> ele.getRuleId().equals(ruleId))) {
-                            try {
-                                fileToIPList(ruleFile, ipAddresses);
-                                ipBanMatchers.add(new IPMatcher(ruleId, name, ipAddresses));
-                                log.warn(tlUI(Lang.IP_BAN_RULE_USE_CACHE, name));
-                                result.set(new StdResp(false, tl(locale, Lang.IP_BAN_RULE_USE_CACHE, name), null));
-                            } catch (IOException ex) {
-                                log.error(tlUI(Lang.IP_BAN_RULE_LOAD_FAILED, name), ex);
+            DualIPv4v6AssociativeTries<String> ipAddresses = new DualIPv4v6AssociativeTries<>();
+            getResource(url)
+                    .whenComplete((dataUpdateResult, throwable) -> {
+                        if (throwable != null) {
+                            // 加载远程订阅文件出错,尝试从本地缓存中加载
+                            if (ruleFile.exists()) {
+                                // 如果一致，但ipBanMatchers没有对应的规则内容，则加载内容
+                                if (ipBanMatchers.stream().noneMatch(ele -> ele.getRuleId().equals(ruleId))) {
+                                    try {
+                                        fileToIPList(ruleFile, ipAddresses);
+                                        ipBanMatchers.add(new IPMatcher(ruleId, name, List.of(ipAddresses)));
+                                        log.warn(tlUI(Lang.IP_BAN_RULE_USE_CACHE, name));
+                                        result.set(new StdResp(false, tl(locale, Lang.IP_BAN_RULE_USE_CACHE, name), null));
+                                    } catch (IOException ex) {
+                                        log.error(tlUI(Lang.IP_BAN_RULE_LOAD_FAILED, name), ex);
+                                        result.set(new StdResp(false, tl(locale, Lang.IP_BAN_RULE_LOAD_FAILED, name), null));
+                                    }
+                                } else {
+                                    result.set(new StdResp(false, tl(locale, Lang.IP_BAN_RULE_UPDATE_FAILED, name), null));
+                                }
+                            } else {
+                                // log.error(Lang.IP_BAN_RULE_LOAD_FAILED, name, throwable);
                                 result.set(new StdResp(false, tl(locale, Lang.IP_BAN_RULE_LOAD_FAILED, name), null));
                             }
-                        } else {
-                            result.set(new StdResp(false, tl(locale, Lang.IP_BAN_RULE_UPDATE_FAILED, name), null));
+                            throw new RuntimeException(throwable);
                         }
-                    } else {
-                        // log.error(Lang.IP_BAN_RULE_LOAD_FAILED, name, throwable);
-                        result.set(new StdResp(false, tl(locale, Lang.IP_BAN_RULE_LOAD_FAILED, name), null));
-                    }
-                    throw new RuntimeException(throwable);
-                }
-                try {
-                    HashCode ruleHash = null;
-                    HashCode tempHash = Files.asByteSource(tempFile).hash(Hashing.sha256());
-                    if (ruleFile.exists()) {
-                        ruleHash = Files.asByteSource(ruleFile).hash(Hashing.sha256());
-                    }
-                    int ent_count = 0;
-                    if (!tempHash.equals(ruleHash)) {
-                        // 规则文件不存在或者规则文件与临时文件sha256不一致则需要更新
-                        ent_count = fileToIPList(tempFile, ipAddresses);
-                        // 更新后重命名临时文件
-                        ruleFile.delete();
-                        tempFile.renameTo(ruleFile);
-                    } else {
-                        // 如果一致，但ipBanMatchers没有对应的规则内容，则加载内容
-                        if (ipBanMatchers.stream().noneMatch(ele -> ele.getRuleId().equals(ruleId))) {
-                            ent_count = fileToIPList(tempFile, ipAddresses);
-                        } else {
-                            log.info(tlUI(Lang.IP_BAN_RULE_NO_UPDATE, name));
-                            result.set(new StdResp(true, tl(locale, Lang.IP_BAN_RULE_NO_UPDATE, name), null));
-                        }
-                        tempFile.delete();
-                    }
-                    if (ent_count > 0) {
-                        // 如果已经存在则更新，否则添加
-                        ipBanMatchers.stream().filter(ele -> ele.getRuleId().equals(ruleId)).findFirst().ifPresentOrElse(ele -> {
-                            ele.setData(name, ipAddresses);
-                            moduleMatchCache.invalidateAll();
-                            log.info(tlUI(Lang.IP_BAN_RULE_UPDATE_SUCCESS, name));
-                            result.set(new StdResp(true, tl(locale, Lang.IP_BAN_RULE_UPDATE_SUCCESS, name), null));
-                        }, () -> {
-                            ipBanMatchers.add(new IPMatcher(ruleId, name, ipAddresses));
-                            log.info(tlUI(Lang.IP_BAN_RULE_LOAD_SUCCESS, name));
-                            result.set(new StdResp(true, tl(locale, Lang.IP_BAN_RULE_LOAD_SUCCESS, name), null));
-                        });
-                        // 更新日志
                         try {
-                            ruleSubLogsDao.create(new RuleSubLogEntity(null, ruleId, System.currentTimeMillis(), ent_count, updateType));
-                            result.set(new StdResp(true, tl(locale, Lang.IP_BAN_RULE_UPDATED, name), null));
-                        } catch (SQLException e) {
-                            log.error(tlUI(Lang.IP_BAN_RULE_UPDATE_LOG_ERROR, ruleId), e);
-                            result.set(new StdResp(false, tl(locale, Lang.IP_BAN_RULE_UPDATE_LOG_ERROR, name), null));
+                            HashCode ruleHash = null;
+                            HashCode tempHash = Hashing.sha256().hashBytes(dataUpdateResult.data());
+                            if (ruleFile.exists()) {
+                                ruleHash = Files.asByteSource(ruleFile).hash(Hashing.sha256());
+                            }
+                            int ent_count = 0;
+                            if (!tempHash.equals(ruleHash)) {
+                                // 规则文件不存在或者规则文件与临时文件sha256不一致则需要更新
+                                ent_count = stringToIPList(new String(dataUpdateResult.data(), StandardCharsets.UTF_8), ipAddresses);
+                                // 更新后重命名临时文件
+                                Files.write(dataUpdateResult.data(), ruleFile);
+                            } else {
+                                // 如果一致，但ipBanMatchers没有对应的规则内容，则加载内容
+                                if (ipBanMatchers.stream().noneMatch(ele -> ele.getRuleId().equals(ruleId))) {
+                                    ent_count = stringToIPList(new String(dataUpdateResult.data(), StandardCharsets.UTF_8), ipAddresses);
+                                } else {
+                                    log.info(tlUI(Lang.IP_BAN_RULE_NO_UPDATE, name));
+                                    result.set(new StdResp(true, tl(locale, Lang.IP_BAN_RULE_NO_UPDATE, name), null));
+                                }
+                            }
+                            if (ent_count > 0) {
+                                // 如果已经存在则更新，否则添加
+                                ipBanMatchers.stream().filter(ele -> ele.getRuleId().equals(ruleId)).findFirst().ifPresentOrElse(ele -> {
+                                    ele.setData(name, List.of(ipAddresses));
+                                    moduleMatchCache.invalidateAll();
+                                    log.info(tlUI(Lang.IP_BAN_RULE_UPDATE_SUCCESS, name));
+                                    result.set(new StdResp(true, tl(locale, Lang.IP_BAN_RULE_UPDATE_SUCCESS, name), null));
+                                }, () -> {
+                                    ipBanMatchers.add(new IPMatcher(ruleId, name, List.of(ipAddresses)));
+                                    log.info(tlUI(Lang.IP_BAN_RULE_LOAD_SUCCESS, name));
+                                    result.set(new StdResp(true, tl(locale, Lang.IP_BAN_RULE_LOAD_SUCCESS, name), null));
+                                });
+                                // 更新日志
+                                try {
+                                    ruleSubLogsDao.create(new RuleSubLogEntity(null, ruleId, System.currentTimeMillis(), ent_count, updateType));
+                                    result.set(new StdResp(true, tl(locale, Lang.IP_BAN_RULE_UPDATED, name), null));
+                                } catch (SQLException e) {
+                                    log.error(tlUI(Lang.IP_BAN_RULE_UPDATE_LOG_ERROR, ruleId), e);
+                                    result.set(new StdResp(false, tl(locale, Lang.IP_BAN_RULE_UPDATE_LOG_ERROR, name), null));
+                                }
+                            } else {
+                                result.set(new StdResp(true, tl(locale, Lang.IP_BAN_RULE_NO_UPDATE, name), null));
+                            }
+                        } catch (IOException e) {
+                            throw new RuntimeException(e);
+                        } finally {
+                            moduleMatchCache.invalidateAll();
                         }
-                    } else {
-                        result.set(new StdResp(true, tl(locale, Lang.IP_BAN_RULE_NO_UPDATE, name), null));
-                    }
-                } catch (IOException e) {
-                    throw new RuntimeException(e);
-                }finally {
-                    moduleMatchCache.invalidateAll();
-                }
-            }).join();
+                    }).join();
         } else {
             result.set(new StdResp(false, tl(locale, Lang.IP_BAN_RULE_URL_WRONG, name), null));
         }
         return result.get();
     }
+
+    private CompletableFuture<DataUpdateResult> getResource(String url) {
+        return CompletableFuture.supplyAsync(() -> {
+            URI uri;
+            try {
+                uri = new URI(url);
+            } catch (URISyntaxException e) {
+                throw new RuntimeException(e);
+            }
+            if (uri.getScheme().startsWith("http")) {
+                var response = HTTPUtil.retryableSend(HTTPUtil.getHttpClient(false, null),
+                        MutableRequest.GET(url), HttpResponse.BodyHandlers.ofString()).join();
+                return new DataUpdateResult(response.statusCode(), null, response.body().getBytes());
+            }
+            throw new IllegalArgumentException("Invalid URL");
+        });
+    }
+
 
     /**
      * 读取规则文件并转为IpList
@@ -286,28 +311,65 @@ public class IPBlackRuleList extends AbstractRuleFeatureModule implements Reload
      * @param ips      ip列表
      * @return 加载的行数
      */
-    private int fileToIPList(File ruleFile, List<IPAddress> ips) throws IOException {
+    private int fileToIPList(File ruleFile, DualIPv4v6AssociativeTries<String> ips) throws IOException {
         AtomicInteger count = new AtomicInteger();
-        Files.readLines(ruleFile, StandardCharsets.UTF_8).stream().filter(s -> !s.isBlank()).forEach(ele -> {
+        StringJoiner sj = new StringJoiner("\n");
+        var lines = Files.readLines(ruleFile, StandardCharsets.UTF_8);
+        for (String ele : lines) {
+            if (ele.isBlank()) continue;
             if (ele.startsWith("#")) {
-                return; // 注释
+                // add into sj but without hashtag prefix
+                sj.add(ele.substring(1));
+                continue;
             }
             try {
-                var parsedIp = parseRuleLine(ele);
+                var parsedIp = parseRuleLine(ele, sj.toString());
                 if (parsedIp != null) {
                     count.getAndIncrement();
-                    ips.add(parsedIp);
+                    ips.put(parsedIp.getLeft(), parsedIp.getRight());
                 }
             } catch (Exception e) {
                 log.error("Unable parse rule: {}", ele, e);
+            } finally {
+                sj = new StringJoiner("\n");
             }
-        });
+        }
         return count.get();
     }
 
-    private IPAddress parseRuleLine(String ele) {
-        // 注释？
-        if (ele.startsWith("#")) return null;
+    /**
+     * 读取规则文本并转为IpList
+     *
+     * @param data 规则文本
+     * @param ips      ip列表
+     * @return 加载的行数
+     */
+    private int stringToIPList(String data, DualIPv4v6AssociativeTries<String> ips) throws IOException {
+        AtomicInteger count = new AtomicInteger();
+        StringJoiner sj = new StringJoiner("\n");
+        for (String ele : data.split("\n")) {
+            if (ele.isBlank()) continue;
+            if (ele.startsWith("#")) {
+                // add into sj but without hashtag prefix
+                sj.add(ele.substring(1));
+                continue;
+            }
+            try {
+                var parsedIp = parseRuleLine(ele, sj.toString());
+                if (parsedIp != null) {
+                    count.getAndIncrement();
+                    ips.put(parsedIp.getLeft(), parsedIp.getRight());
+                }
+            } catch (Exception e) {
+                log.error("Unable parse rule: {}", ele, e);
+            } finally {
+                sj = new StringJoiner("\n");
+            }
+        }
+        return count.get();
+    }
+
+    private Pair<IPAddress, @Nullable String> parseRuleLine(String ele, String preReadComment) {
         // 检查是否是 DAT/eMule 格式
         // 016.000.000.000 , 016.255.255.255 , 200 , Yet another organization
         // 032.000.000.000 , 032.255.255.255 , 200 , And another
@@ -319,11 +381,24 @@ public class IPBlackRuleList extends AbstractRuleFeatureModule implements Reload
             IPAddress start = IPAddressUtil.getIPAddress(spilted[0]);
             IPAddress end = IPAddressUtil.getIPAddress(spilted[1]);
             int level = Integer.parseInt(spilted[2]);
+            String comment = spilted.length > 3 ? spilted[3] : preReadComment;
             if (level >= 128) return null;
             if (start == null || end == null) return null;
-            return start.spanWithRange(end).coverWithPrefixBlock();
+            return Pair.of(start.spanWithRange(end).coverWithPrefixBlock(), comment);
+        } else {
+            // ip #end-line-comment
+            String ip;
+            if (ele.contains("#")) {
+                ip = ele.substring(0, ele.indexOf("#"));
+                String comment = null;
+                if (ele.contains("#")) {
+                    comment = ele.substring(ele.indexOf("#") + 1);
+                }
+                return Pair.of(IPAddressUtil.getIPAddress(ip), Optional.ofNullable(comment).orElse(preReadComment));
+            } else {
+                return Pair.of(IPAddressUtil.getIPAddress(ele), preReadComment);
+            }
         }
-        return IPAddressUtil.getIPAddress(ele);
     }
 
     /**
@@ -368,7 +443,7 @@ public class IPBlackRuleList extends AbstractRuleFeatureModule implements Reload
     public ConfigurationSection saveRuleSubInfo(@NotNull RuleSubInfoEntity ruleSubInfo) throws IOException {
         ConfigurationSection rules = getRuleSubsConfig();
         String ruleId = ruleSubInfo.getRuleId().trim();
-        if(ruleId.contains(".")){
+        if (ruleId.contains(".")) {
             throw new IllegalArgumentException("Character '.' is not allowed.");
         }
         rules.set(ruleId + ".enabled", ruleSubInfo.isEnabled());
@@ -435,6 +510,9 @@ public class IPBlackRuleList extends AbstractRuleFeatureModule implements Reload
     }
 
     record IPBanResult(String ruleName, MatchResult matchResult) {
+    }
+
+    record DataUpdateResult(int code, String message, byte[] data) {
     }
 }
 

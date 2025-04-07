@@ -16,6 +16,7 @@
             <a-radio-group v-model="form.language">
               <a-radio value="en_us">English</a-radio>
               <a-radio value="zh_cn">简体中文</a-radio>
+              <a-radio value="zh_tw">繁體中文</a-radio>
               <a-radio value="default">{{
                 t('page.settings.tab.config.language.default')
               }}</a-radio>
@@ -27,11 +28,6 @@
                 >
               </i18n-t>
             </template>
-          </a-form-item>
-          <a-form-item label="PBH Plus key">
-            <a-button type="primary" @click="endpointStore.emitter.emit('open-plus-modal')">
-              {{ t('page.settings.tab.config.plus.button') }}
-            </a-button>
           </a-form-item>
           <a-form-item
             :label="t('page.settings.tab.config.privacy.errorReport')"
@@ -50,11 +46,13 @@
           <a-divider />
           <btn v-model="form.btn" />
           <a-divider />
-          <proxy v-model="form.proxy" />
+          <network v-model:proxy="form.proxy" v-model:resolvers="form.resolvers" />
           <a-divider />
           <ipDatabase v-model="form.ip_database" />
           <a-divider />
           <performance v-model="form.performance" />
+          <a-divider />
+          <push />
           <br />
           <a-form-item label-col-flex="0">
             <a-button html-type="submit" type="primary" :loading="saving" @click="submitConfig()">
@@ -70,7 +68,6 @@
 <script setup lang="ts">
 import type { Config } from '@/api/model/config'
 import { GetConfig, SaveConfig } from '@/service/settings'
-import { useEndpointStore } from '@/stores/endpoint'
 import { reactive, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useRequest } from 'vue-request'
@@ -80,12 +77,12 @@ import btn from './components/btn.vue'
 import ipDatabase from './components/ipDatabase.vue'
 import logger from './components/logger.vue'
 import lookup from './components/lookup.vue'
+import network from './components/network.vue'
 import performance from './components/performance.vue'
 import persist from './components/persist.vue'
-import proxy from './components/proxy.vue'
+import push from './components/push.vue'
 import webui from './components/webui.vue'
 
-const endpointStore = useEndpointStore()
 const { t } = useI18n()
 const form = reactive({
   server: {},
@@ -96,7 +93,8 @@ const form = reactive({
   ip_database: {},
   privacy: {},
   proxy: {},
-  performance: {}
+  performance: {},
+  resolvers: {}
 } as Config)
 const { loading } = useRequest(GetConfig, {
   onSuccess: (data) => {
